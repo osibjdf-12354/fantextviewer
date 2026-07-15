@@ -182,7 +182,6 @@ class _ReaderViewState extends State<ReaderView> {
   String? _paginationKey;
   double _paginationProgress = 0;
   int _paginationGeneration = 0;
-  int _currentPage = 0;
   bool _wakelockEnabled = false;
 
   TextStyle get _textStyle => TextStyle(
@@ -366,7 +365,6 @@ class _ReaderViewState extends State<ReaderView> {
       controller: _pageController,
       itemCount: pages.length,
       onPageChanged: (index) {
-        setState(() => _currentPage = index);
         _setOffset(pages[index].start);
       },
       itemBuilder: (context, index) {
@@ -413,7 +411,6 @@ class _ReaderViewState extends State<ReaderView> {
       _pageController = PageController(initialPage: initialPage);
       setState(() {
         _pages = pages;
-        _currentPage = initialPage;
       });
       if (_settings.mode == ReadingMode.scroll) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -488,7 +485,6 @@ class _ReaderViewState extends State<ReaderView> {
       if (pages != null && _pageController?.hasClients == true) {
         final page = pageForOffset(pages, _offset);
         _pageController!.jumpToPage(page);
-        setState(() => _currentPage = page);
       }
     }
   }
