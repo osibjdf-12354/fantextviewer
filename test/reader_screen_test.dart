@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +15,83 @@ import 'package:geulbom/text_paginator.dart';
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
 
 void main() {
+  testWidgets('계산 중에도 페이지 번호로 즉시 이동한다', (tester) async {
+    final text = List.generate(400, (index) => '문장 $index 가나다라\n').join();
+    final exactPages = <TextPage>[
+      for (var start = 0; start < text.length; start += 100)
+        TextPage(start: start, end: math.min(start + 100, text.length)),
+    ];
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
+    final completion = Completer<List<TextPage>>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                onBatch?.call([exactPages.first]);
+                return completion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '5');
+    await tester.tap(find.text('이동'));
+    await tester.pumpAndSettle();
+
+    expect(completion.isCompleted, isFalse);
+    expect(store.document('/book.txt').offset, greaterThan(0));
+    expect(find.text('5페이지'), findsOneWidget);
+    expect(find.textContaining('%'), findsNothing);
+    final selectedOffset = store.document('/book.txt').offset;
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    expect(find.text('현재 5페이지'), findsOneWidget);
+    expect(find.textContaining('%'), findsNothing);
+
+    completion.complete(exactPages);
+    await tester.pump();
+    await tester.pump();
+
+    expect(store.document('/book.txt').offset, selectedOffset);
+  });
+
+  testWidgets('하단과 햄버거 메뉴는 퍼센트 대신 현재 페이지를 표시한다', (tester) async {
+    final store = _MemoryStore();
+    await _pumpReader(tester, store, _longText);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining(RegExp(r'^\d+페이지$')), findsWidgets);
+    expect(find.textContaining('%'), findsNothing);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining(RegExp(r'^현재 \d+페이지$')), findsOneWidget);
+    expect(find.textContaining('%'), findsNothing);
+  });
+
   testWidgets('강제 인코딩마다 별도 페이지 캐시를 사용한다', (tester) async {
     const text = '같은길이본문';
     final cache = _MemoryPageIndexCache();
@@ -376,7 +454,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('북마크'));
     await tester.pumpAndSettle();
-    expect(find.textContaining(RegExp(r'^\d+페이지$')), findsOneWidget);
+    expect(find.textContaining(RegExp(r'^\d+페이지$')), findsWidgets);
   });
 
   testWidgets('표시 설정은 단계 버튼으로 값과 과거 소수값을 조절한다', (tester) async {

@@ -202,6 +202,10 @@ class _ReaderViewState extends State<ReaderView> {
   List<TextPage>? _pages;
   PageController? _pageController;
   int? _pendingPageOffset;
+  Size? _pageSize;
+  ({List<TextPage> pages, int firstPage})? _pageWindow;
+  int _pageWindowGeneration = 0;
+  int _displayPageNumber = 1;
   String? _paginationKey;
   double _paginationProgress = 0;
   int _paginationGeneration = 0;
@@ -209,6 +213,42 @@ class _ReaderViewState extends State<ReaderView> {
   bool _wakelockEnabled = false;
 
   List<TextPage>? get _completePages => _paginationComplete ? _pages : null;
+
+  int get _fallbackCharactersPerPage {
+    final size = _pageSize;
+    if (size == null) return 400;
+    final charactersPerLine = math.max(
+      1,
+      (size.width / math.max(1, _settings.fontSize)).floor(),
+    );
+    final linesPerPage = math.max(
+      1,
+      (size.height / math.max(1, _settings.fontSize * _settings.lineHeight))
+          .floor(),
+    );
+    return charactersPerLine * linesPerPage;
+  }
+
+  int get _displayTotalPages => estimatedPageCount(
+    widget.text.length,
+    _pages ?? const [],
+    fallbackCharactersPerPage: _fallbackCharactersPerPage,
+  );
+
+  int get _currentPageNumber {
+    if (_pageWindow != null) return _displayPageNumber;
+    final pages = _pages;
+    if (pages != null &&
+        pages.isNotEmpty &&
+        (_paginationComplete || _offset < pages.last.end)) {
+      return pageForOffset(pages, _offset) + 1;
+    }
+    return estimatedPageForOffset(
+      _offset,
+      textLength: widget.text.length,
+      totalPages: _displayTotalPages,
+    );
+  }
 
   TextStyle get _textStyle => TextStyle(
     color: Color(_settings.foreground.value),
@@ -288,7 +328,7 @@ class _ReaderViewState extends State<ReaderView> {
           children: [
             ListTile(
               title: Text(widget.title),
-              subtitle: Text('${(_progress * 100).toStringAsFixed(1)}% 읽음'),
+              subtitle: Text('현재 $_currentPageNumber페이지'),
             ),
             const Divider(),
             _drawerItem(Icons.folder_open, '파일 열기', widget.onOpenFile),
@@ -350,29 +390,14 @@ class _ReaderViewState extends State<ReaderView> {
             return SelectableText(text, style: _textStyle);
           },
         ),
-        Positioned(
-          right: 12,
-          bottom: 8,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Color(_settings.background.value).withValues(alpha: .85),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Text(
-                '${(_progress * 100).toStringAsFixed(1)}%',
-                style: TextStyle(color: Color(_settings.foreground.value)),
-              ),
-            ),
-          ),
-        ),
+        _buildPageIndicator(),
       ],
     );
   }
 
   Widget _buildPageReader() {
-    final pages = _pages;
+    final window = _pageWindow;
+    final pages = window?.pages ?? _pages;
     if (pages == null || _pageController == null) {
       return Center(
         child: Column(
@@ -387,32 +412,63 @@ class _ReaderViewState extends State<ReaderView> {
         ),
       );
     }
-    return PageView.builder(
-      controller: _pageController,
-      itemCount: pages.length,
-      onPageChanged: (index) {
-        _pendingPageOffset = null;
-        _setOffset(pages[index].start);
-      },
-      itemBuilder: (context, index) {
-        final page = pages[index];
-        return Padding(
-          padding: EdgeInsets.symmetric(
-            horizontal: _settings.horizontalPadding,
+    return Stack(
+      children: [
+        PageView.builder(
+          controller: _pageController,
+          itemCount: pages.length,
+          onPageChanged: (index) {
+            _pendingPageOffset = null;
+            setState(() {
+              _displayPageNumber = window == null
+                  ? index + 1
+                  : window.firstPage + index;
+              _setOffset(pages[index].start);
+            });
+          },
+          itemBuilder: (context, index) {
+            final page = pages[index];
+            return Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: _settings.horizontalPadding,
+              ),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SelectableText(
+                  widget.text.substring(page.start, page.end),
+                  style: _textStyle,
+                ),
+              ),
+            );
+          },
+        ),
+        _buildPageIndicator(),
+      ],
+    );
+  }
+
+  Widget _buildPageIndicator() {
+    return Positioned(
+      right: 12,
+      bottom: 8,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Color(_settings.background.value).withValues(alpha: .85),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Text(
+            '$_currentPageNumber페이지',
+            style: TextStyle(color: Color(_settings.foreground.value)),
           ),
-          child: Align(
-            alignment: Alignment.topLeft,
-            child: SelectableText(
-              widget.text.substring(page.start, page.end),
-              style: _textStyle,
-            ),
-          ),
-        );
-      },
+        ),
+      ),
     );
   }
 
   void _ensurePages(Size size) {
+    _pageSize = size;
     final key = jsonEncode({
       'algorithm': 1,
       'path': widget.path,
@@ -428,6 +484,8 @@ class _ReaderViewState extends State<ReaderView> {
     });
     if (_paginationKey == key) return;
     _paginationKey = key;
+    _pageWindowGeneration++;
+    _pageWindow = null;
     _pages = null;
     _paginationProgress = 0;
     _paginationComplete = false;
@@ -485,9 +543,18 @@ class _ReaderViewState extends State<ReaderView> {
 
   void _setPaginationPages(List<TextPage> pages, {required bool complete}) {
     final initialPage = pages.isEmpty ? 0 : pageForOffset(pages, _offset);
-    if (_pageController == null &&
+    if (complete) {
+      _pageWindowGeneration++;
+      _pageWindow = null;
+      _pageController?.dispose();
+      _pageController = pages.isEmpty
+          ? null
+          : PageController(initialPage: initialPage);
+      _displayPageNumber = initialPage + 1;
+    } else if (_pageWindow == null &&
+        _pageController == null &&
         pages.isNotEmpty &&
-        (complete || pages.last.end > _offset)) {
+        pages.last.end > _offset) {
       _pageController = PageController(initialPage: initialPage);
     }
     setState(() {
@@ -496,6 +563,7 @@ class _ReaderViewState extends State<ReaderView> {
     });
     final pendingOffset = _pendingPageOffset;
     if (_settings.mode == ReadingMode.page &&
+        _pageWindow == null &&
         pendingOffset != null &&
         pages.isNotEmpty &&
         (complete || pendingOffset < pages.last.end)) {
@@ -584,6 +652,27 @@ class _ReaderViewState extends State<ReaderView> {
       }
       return;
     }
+    final window = _pageWindow;
+    if (window != null) {
+      if (_offset >= window.pages.first.start &&
+          _offset < window.pages.last.end &&
+          _pageController?.hasClients == true) {
+        _pageController!.jumpToPage(pageForOffset(window.pages, _offset));
+      } else {
+        final total = _displayTotalPages;
+        unawaited(
+          _jumpToPageNumber(
+            estimatedPageForOffset(
+              _offset,
+              textLength: widget.text.length,
+              totalPages: total,
+            ),
+            sourceOffset: _offset,
+          ),
+        );
+      }
+      return;
+    }
     final pages = _pages;
     if (pages != null &&
         pages.isNotEmpty &&
@@ -596,8 +685,86 @@ class _ReaderViewState extends State<ReaderView> {
     }
   }
 
-  double get _progress =>
-      widget.text.isEmpty ? 0 : _offset / widget.text.length;
+  Future<void> _jumpToPageNumber(int page, {int? sourceOffset}) async {
+    final exactPages = _completePages;
+    if (exactPages != null) {
+      _jumpToOffset(exactPages[page - 1].start);
+      return;
+    }
+
+    final totalPages = _displayTotalPages;
+    final targetOffset =
+        sourceOffset ??
+        estimatedOffsetForPage(
+          page,
+          textLength: widget.text.length,
+          totalPages: totalPages,
+        );
+    if (_settings.mode == ReadingMode.scroll) {
+      _jumpToOffset(targetOffset);
+      return;
+    }
+
+    final size = _pageSize;
+    if (size == null) return;
+    final measuredPages = _pages;
+    final charactersPerPage = measuredPages == null || measuredPages.isEmpty
+        ? _fallbackCharactersPerPage
+        : math
+              .max(1, (measuredPages.last.end / measuredPages.length).round())
+              .toInt();
+    final startOffset = math
+        .max(0, targetOffset - charactersPerPage * math.min(4, page - 1))
+        .toInt();
+    final paginationGeneration = _paginationGeneration;
+    final windowGeneration = ++_pageWindowGeneration;
+    bool cancelled() =>
+        !mounted ||
+        paginationGeneration != _paginationGeneration ||
+        windowGeneration != _pageWindowGeneration;
+
+    var pages = await paginateTextWindow(
+      text: widget.text,
+      startOffset: startOffset,
+      size: size,
+      style: _textStyle,
+      isCancelled: cancelled,
+    );
+    if (cancelled()) return;
+    if (pages.isNotEmpty &&
+        targetOffset >= pages.last.end &&
+        pages.last.end < widget.text.length) {
+      pages = await paginateTextWindow(
+        text: widget.text,
+        startOffset: targetOffset,
+        size: size,
+        style: _textStyle,
+        isCancelled: cancelled,
+      );
+    }
+    if (cancelled() || pages.isEmpty) return;
+
+    var localPage = pageForOffset(pages, targetOffset);
+    if (localPage >= page) {
+      final drop = localPage - (page - 1);
+      pages = pages.sublist(drop);
+      localPage -= drop;
+    }
+    final firstPage = page - localPage;
+    final remainingPages = totalPages - firstPage + 1;
+    if (pages.length > remainingPages) {
+      pages = pages.sublist(0, remainingPages);
+    }
+
+    _pageController?.dispose();
+    _pageController = PageController(initialPage: localPage);
+    setState(() {
+      _pageWindow = (pages: pages, firstPage: firstPage);
+      _displayPageNumber = page;
+      _pendingPageOffset = null;
+      _setOffset(pages[localPage].start);
+    });
+  }
 
   void _scheduleSave() {
     _saveTimer?.cancel();
@@ -629,8 +796,8 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   Future<void> _showGoToDialog() async {
-    final pages = _completePages;
-    if (pages == null) {
+    final totalPages = _displayTotalPages;
+    if (totalPages < 1) {
       _showMessage('페이지를 계산하고 있습니다.');
       return;
     }
@@ -645,7 +812,7 @@ class _ReaderViewState extends State<ReaderView> {
           onChanged: (next) => value = next,
           decoration: InputDecoration(
             labelText: '페이지',
-            hintText: '1~${pages.length}',
+            hintText: '1~$totalPages',
           ),
         ),
         actions: [
@@ -662,11 +829,11 @@ class _ReaderViewState extends State<ReaderView> {
     );
     if (input == null || !mounted) return;
     final page = int.tryParse(input.trim());
-    if (page == null || page < 1 || page > pages.length) {
-      _showMessage('1~${pages.length} 사이 페이지를 입력해 주세요.');
+    if (page == null || page < 1 || page > totalPages) {
+      _showMessage('1~$totalPages 사이 페이지를 입력해 주세요.');
       return;
     }
-    _jumpToOffset(pages[page - 1].start);
+    await _jumpToPageNumber(page);
   }
 
   Future<void> _showSearchDialog() async {
@@ -702,10 +869,6 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   Future<void> _showBookmarks() async {
-    if (_completePages == null) {
-      _showMessage('페이지를 계산하고 있습니다.');
-      return;
-    }
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -933,6 +1096,7 @@ class _ReaderViewState extends State<ReaderView> {
 
   void _applySettings(ReaderSettings settings) {
     _paginationGeneration++;
+    _pageWindowGeneration++;
     _pendingPageOffset = null;
     _pageController?.dispose();
     _pageController = null;
@@ -940,6 +1104,7 @@ class _ReaderViewState extends State<ReaderView> {
       _settings = settings;
       _paginationKey = null;
       _pages = null;
+      _pageWindow = null;
       _paginationComplete = false;
     });
     widget.store.updateSettings(settings);
@@ -996,9 +1161,19 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   int? _pageNumberForOffset(int offset) {
-    final pages = _completePages;
-    if (pages == null || pages.isEmpty) return null;
-    return pageForOffset(pages, offset) + 1;
+    if (widget.text.isEmpty) return null;
+    if (_pageWindow != null && offset == _offset) return _displayPageNumber;
+    final pages = _pages;
+    if (pages != null &&
+        pages.isNotEmpty &&
+        (_paginationComplete || offset < pages.last.end)) {
+      return pageForOffset(pages, offset) + 1;
+    }
+    return estimatedPageForOffset(
+      offset,
+      textLength: widget.text.length,
+      totalPages: _displayTotalPages,
+    );
   }
 }
 
