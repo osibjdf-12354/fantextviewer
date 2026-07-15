@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geulbom/text_paginator.dart';
@@ -76,6 +78,20 @@ void main() {
     }
     expect(batches.last, hasLength(inInclusiveRange(1, 8)));
     expect(batches.expand((batch) => batch), orderedEquals(pages));
+  });
+
+  test('yields to the event loop after at most two pages', () async {
+    var eventLoopTurn = false;
+    Timer.run(() => eventLoopTurn = true);
+
+    final pages = await paginateText(
+      text: List.filled(1000, 'responsive pagination text ').join(),
+      size: const Size(160, 120),
+      style: const TextStyle(fontSize: 20, height: 1.5),
+      isCancelled: () => eventLoopTurn,
+    );
+
+    expect(pages, hasLength(2));
   });
 
   test('uses the previous page length as the next first probe', () async {

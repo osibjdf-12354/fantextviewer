@@ -49,8 +49,8 @@ Future<List<TextPage>> paginateText({
       onBatch?.call(pages.sublist(batchStart));
       batchStart = pages.length;
       onProgress?.call(start / text.length);
-      await Future<void>.delayed(Duration.zero);
     }
+    if (pages.length.isEven) await Future<void>.delayed(Duration.zero);
   }
   if (batchStart < pages.length) {
     onBatch?.call(pages.sublist(batchStart));
@@ -99,7 +99,7 @@ Future<List<TextPage>> paginateTextWindow({
     pages.add(TextPage(start: start, end: end));
     probeLength = ((end - start) * 1.25).ceil();
     start = end;
-    if (pages.length % 8 == 0) await Future<void>.delayed(Duration.zero);
+    if (pages.length.isEven) await Future<void>.delayed(Duration.zero);
   }
   return pages;
 }

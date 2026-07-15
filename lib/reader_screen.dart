@@ -37,6 +37,8 @@ typedef ReaderWindowPaginator =
       bool Function()? isCancelled,
     });
 
+const _eagerScrollPaginationLimit = 256 * 1024;
+
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({super.key, required this.path, required this.store});
 
@@ -335,7 +337,12 @@ class _ReaderViewState extends State<ReaderView> {
                   ),
                   math.max(1, constraints.maxHeight),
                 );
-                _ensurePages(pageSize);
+                _pageSize = pageSize;
+                if (_settings.mode == ReadingMode.page ||
+                    widget.text.length <= _eagerScrollPaginationLimit ||
+                    _paginationKey != null) {
+                  _ensurePages(pageSize);
+                }
                 return _settings.mode == ReadingMode.scroll
                     ? _buildScrollReader()
                     : _buildPageReader();
@@ -519,7 +526,6 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   void _ensurePages(Size size) {
-    _pageSize = size;
     final key = jsonEncode({
       'algorithm': 2,
       'path': widget.path,
@@ -556,6 +562,12 @@ class _ReaderViewState extends State<ReaderView> {
           _setPaginationPages(cached, complete: true);
           return;
         }
+      }
+      if (_settings.mode == ReadingMode.page &&
+          widget.text.length > _eagerScrollPaginationLimit &&
+          _offset > 0) {
+        await _jumpToPageNumber(_currentPageNumber, sourceOffset: _offset);
+        if (!mounted || generation != _paginationGeneration) return;
       }
       final progressivePages = <TextPage>[];
       final pages = await widget.paginator(
@@ -797,6 +809,8 @@ class _ReaderViewState extends State<ReaderView> {
       return;
     }
     if (sourceOffset == null) {
+      final size = _pageSize;
+      if (_paginationKey == null && size != null) _ensurePages(size);
       _navigationGeneration++;
       _pendingTargetPage = page;
       _showMessage('$page페이지까지 계산하고 있습니다. 계산되는 즉시 이동합니다.');

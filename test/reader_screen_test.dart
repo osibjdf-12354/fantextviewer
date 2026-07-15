@@ -17,6 +17,58 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
 
 void main() {
+  testWidgets('large scroll mode paginates only on demand and after resize', (
+    tester,
+  ) async {
+    var paginationCalls = 0;
+    final text = List.filled(300 * 1024, 'a').join();
+    await tester.binding.setSurfaceSize(const Size(400, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: _MemoryStore(),
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async {
+                paginationCalls++;
+                return const [];
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(paginationCalls, 0);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '1');
+    await tester.tap(find.text('이동'));
+    await tester.pumpAndSettle();
+
+    expect(paginationCalls, 1);
+
+    await tester.binding.setSurfaceSize(const Size(700, 400));
+    await tester.pumpAndSettle();
+
+    expect(paginationCalls, 2);
+  });
+
   testWidgets('계산 중에도 페이지 번호로 즉시 이동한다', (tester) async {
     final text = List.generate(400, (index) => '문장 $index 가나다라\n').join();
     final exactPages = <TextPage>[
@@ -578,6 +630,74 @@ void main() {
     ]);
     await tester.pump();
   });
+
+  testWidgets(
+    'large page mode restores the saved offset before full indexing',
+    (tester) async {
+      final prefix = List.filled(300 * 1024, 'a').join();
+      final text = '${prefix}TARGET${List.filled(1000, 'b').join()}';
+      final targetOffset = prefix.length;
+      final store = _MemoryStore()
+        ..updateSettings(const ReaderSettings(mode: ReadingMode.page))
+        ..updateProgress(
+          '/book.txt',
+          offset: targetOffset,
+          documentLength: text.length,
+        );
+      final completion = Completer<List<TextPage>>();
+      var windowCalls = 0;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderView(
+            path: '/book.txt',
+            title: 'book.txt',
+            text: text,
+            encoding: TextEncoding.utf8,
+            store: store,
+            paginator:
+                ({
+                  required text,
+                  required size,
+                  required style,
+                  onProgress,
+                  onBatch,
+                  onLayout,
+                  isCancelled,
+                }) => completion.future,
+            windowPaginator:
+                ({
+                  required text,
+                  required startOffset,
+                  required size,
+                  required style,
+                  onLayout,
+                  isCancelled,
+                }) async {
+                  windowCalls++;
+                  return [
+                    TextPage(start: startOffset, end: targetOffset),
+                    TextPage(
+                      start: targetOffset,
+                      end: math.min(targetOffset + 32, text.length),
+                    ),
+                  ];
+                },
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(windowCalls, 1);
+      expect(completion.isCompleted, isFalse);
+      expect(find.textContaining('TARGET'), findsOneWidget);
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      completion.complete(const []);
+      await tester.pump();
+    },
+  );
 
   testWidgets('keeps many progressive delta batches unique', (tester) async {
     final text = List.generate(
