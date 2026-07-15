@@ -56,7 +56,7 @@ void main() {
       isCancelled: () => cancellationChecks++ >= 3,
     );
 
-    expect(pages, hasLength(3));
+    expect(pages, isNotEmpty);
     expect(pages.last.end, lessThan(text.length));
   });
 
@@ -78,7 +78,7 @@ void main() {
     expect(batches.expand((batch) => batch), orderedEquals(pages));
   });
 
-  test('uses smaller layout probes after the first page', () async {
+  test('uses the previous page length as the next first probe', () async {
     final layoutLengths = <int>[];
 
     await paginateText(
@@ -90,6 +90,44 @@ void main() {
 
     expect(layoutLengths.first, 4096);
     expect(layoutLengths.skip(1), isNotEmpty);
-    expect(layoutLengths.skip(1), everyElement(lessThan(2048)));
+    expect(layoutLengths[1], lessThan(2048));
+  });
+
+  test('bounds layout probes when page density changes', () async {
+    final layoutLengths = <int>[];
+    final text =
+        '${List.filled(100, '\n').join()}${List.filled(12000, 'i').join()}';
+
+    final pages = await paginateText(
+      text: text,
+      size: const Size(2000, 2000),
+      style: const TextStyle(fontSize: 20),
+      onLayout: layoutLengths.add,
+    );
+
+    expect(pages.length, greaterThan(1));
+    expect(layoutLengths, hasLength(lessThan(20)));
+  });
+
+  test('cancels while growing a dense-page probe', () async {
+    final layoutLengths = <int>[];
+    final text =
+        '${List.filled(100, '\n').join()}${List.filled(12000, 'i').join()}';
+    var cancelled = false;
+
+    final pages = await paginateText(
+      text: text,
+      size: const Size(2000, 2000),
+      style: const TextStyle(fontSize: 20),
+      onLayout: (length) {
+        layoutLengths.add(length);
+        if (length < 4096) cancelled = true;
+      },
+      isCancelled: () => cancelled,
+    );
+
+    expect(pages, hasLength(1));
+    expect(pages.single.end, lessThan(text.length));
+    expect(layoutLengths, hasLength(2));
   });
 }

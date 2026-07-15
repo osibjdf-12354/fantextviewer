@@ -109,6 +109,72 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('keeps many progressive delta batches unique', (tester) async {
+    final text = List.generate(
+      48,
+      (index) => String.fromCharCode(0x100 + index),
+    ).join();
+    final pages = List.generate(
+      text.length,
+      (index) => TextPage(start: index, end: index + 1),
+    );
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
+    final completion = Completer<List<TextPage>>();
+    PaginationBatchCallback? emitBatch;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                emitBatch = onBatch;
+                return completion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    for (final page in pages) {
+      emitBatch?.call([page]);
+    }
+    await tester.pump();
+
+    expect(
+      (tester.widget<PageView>(find.byType(PageView)).childrenDelegate
+              as SliverChildBuilderDelegate)
+          .childCount,
+      pages.length,
+    );
+
+    completion.complete(pages);
+    await tester.pump();
+    await tester.pump();
+
+    final pageView = tester.widget<PageView>(find.byType(PageView));
+    expect(
+      (pageView.childrenDelegate as SliverChildBuilderDelegate).childCount,
+      pages.length,
+    );
+    pageView.controller!.jumpToPage(pages.length - 1);
+    await tester.pumpAndSettle();
+    expect(find.text(text.substring(text.length - 1)), findsOneWidget);
+  });
+
   testWidgets('나중 배치가 검색 위치를 덮으면 해당 페이지로 이동한다', (tester) async {
     const text = '첫페이지둘째페이지찾을본문';
     final store = _MemoryStore()

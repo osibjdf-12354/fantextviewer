@@ -447,6 +447,7 @@ class _ReaderViewState extends State<ReaderView> {
           return;
         }
       }
+      final progressivePages = <TextPage>[];
       final pages = await widget.paginator(
         text: widget.text,
         size: size,
@@ -461,7 +462,8 @@ class _ReaderViewState extends State<ReaderView> {
               batch.isEmpty) {
             return;
           }
-          _setPaginationPages([...?_pages, ...batch], complete: false);
+          progressivePages.addAll(batch);
+          _setPaginationPages(progressivePages, complete: false);
         },
         isCancelled: () => !mounted || generation != _paginationGeneration,
       );

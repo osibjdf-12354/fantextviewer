@@ -32,7 +32,16 @@ Future<List<TextPage>> paginateText({
   var probeLength = 4096;
   while (start < text.length) {
     if (isCancelled?.call() == true) break;
-    final end = _nextPageEnd(text, start, size, style, probeLength, onLayout);
+    final end = _nextPageEnd(
+      text,
+      start,
+      size,
+      style,
+      probeLength,
+      onLayout,
+      isCancelled,
+    );
+    if (end == null) break;
     pages.add(TextPage(start: start, end: end));
     probeLength = end - start;
     start = end;
@@ -70,13 +79,14 @@ int pageForOffset(List<TextPage> pages, int offset) {
   return low.clamp(0, pages.length - 1);
 }
 
-int _nextPageEnd(
+int? _nextPageEnd(
   String text,
   int start,
   Size size,
   TextStyle style,
   int probeLength,
   TextLayoutCallback? onLayout,
+  bool Function()? isCancelled,
 ) {
   var candidateEnd = math.min(start + probeLength, text.length);
   late TextPainter painter;
@@ -87,9 +97,13 @@ int _nextPageEnd(
       style,
       onLayout,
     );
+    if (isCancelled?.call() == true) {
+      painter.dispose();
+      return null;
+    }
     if (painter.height > size.height || candidateEnd == text.length) break;
     painter.dispose();
-    candidateEnd = math.min(candidateEnd + probeLength, text.length);
+    candidateEnd = math.min(start + (candidateEnd - start) * 2, text.length);
   }
 
   if (painter.height <= size.height) {
