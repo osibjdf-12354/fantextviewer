@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -21,6 +23,16 @@ typedef ReaderPaginator =
       required TextStyle style,
       ValueChanged<double>? onProgress,
       PaginationBatchCallback? onBatch,
+      TextLayoutCallback? onLayout,
+      bool Function()? isCancelled,
+    });
+
+typedef ReaderWindowPaginator =
+    Future<List<TextPage>> Function({
+      required String text,
+      required int startOffset,
+      required Size size,
+      required TextStyle style,
       TextLayoutCallback? onLayout,
       bool Function()? isCancelled,
     });
@@ -172,6 +184,7 @@ class ReaderView extends StatefulWidget {
     this.modified,
     this.pageIndexCache,
     this.paginator = paginateText,
+    this.windowPaginator = paginateTextWindow,
     this.onEncodingChanged,
     this.onOpenFile,
   });
@@ -185,6 +198,7 @@ class ReaderView extends StatefulWidget {
   final DateTime? modified;
   final PageIndexCache? pageIndexCache;
   final ReaderPaginator paginator;
+  final ReaderWindowPaginator windowPaginator;
   final ValueChanged<TextEncoding>? onEncodingChanged;
   final VoidCallback? onOpenFile;
 
@@ -208,6 +222,7 @@ class _ReaderViewState extends State<ReaderView> {
   Size? _pageSize;
   ({List<TextPage> pages, int firstPage})? _pageWindow;
   int _pageWindowGeneration = 0;
+  int _navigationGeneration = 0;
   int _displayPageNumber = 1;
   String? _paginationKey;
   double _paginationProgress = 0;
@@ -371,32 +386,40 @@ class _ReaderViewState extends State<ReaderView> {
   Widget _buildScrollReader() {
     return Stack(
       children: [
-        NotificationListener<ScrollNotification>(
-          onNotification: (notification) {
-            if (notification is ScrollStartNotification &&
-                notification.dragDetails != null) {
-              _pendingScrollOffset = null;
-            }
-            return false;
+        Listener(
+          onPointerSignal: (event) {
+            if (event is PointerScrollEvent) _invalidateQueuedNavigation();
           },
-          child: ScrollablePositionedList.builder(
-            itemCount: _chunks.length,
-            itemScrollController: _itemScrollController,
-            itemPositionsListener: _itemPositionsListener,
-            initialScrollIndex: _chunkForOffset(_offset),
-            initialAlignment: widget.store
-                .document(widget.path)
-                .scrollAlignment
-                .clamp(0, 1),
-            padding: EdgeInsets.fromLTRB(
-              _settings.horizontalPadding,
-              16,
-              _settings.horizontalPadding,
-              56,
-            ),
-            itemBuilder: (context, index) {
-              return SelectableText(_chunks[index].text, style: _textStyle);
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (notification) {
+              if (notification is ScrollUpdateNotification ||
+                  (notification is ScrollStartNotification &&
+                      notification.dragDetails != null) ||
+                  (notification is UserScrollNotification &&
+                      notification.direction != ScrollDirection.idle)) {
+                _invalidateQueuedNavigation();
+              }
+              return false;
             },
+            child: ScrollablePositionedList.builder(
+              itemCount: _chunks.length,
+              itemScrollController: _itemScrollController,
+              itemPositionsListener: _itemPositionsListener,
+              initialScrollIndex: _chunkForOffset(_offset),
+              initialAlignment: widget.store
+                  .document(widget.path)
+                  .scrollAlignment
+                  .clamp(0, 1),
+              padding: EdgeInsets.fromLTRB(
+                _settings.horizontalPadding,
+                16,
+                _settings.horizontalPadding,
+                56,
+              ),
+              itemBuilder: (context, index) {
+                return SelectableText(_chunks[index].text, style: _textStyle);
+              },
+            ),
           ),
         ),
         _buildPageIndicator(),
@@ -424,44 +447,51 @@ class _ReaderViewState extends State<ReaderView> {
     }
     return Stack(
       children: [
-        PageView.builder(
-          key: ObjectKey(controller),
-          controller: controller,
-          itemCount: pages.length,
-          onPageChanged: (index) {
-            if (!identical(controller, _pageController)) return;
-            _pendingTargetPage = null;
-            final initialOffset = _pageControllerInitialOffset;
-            _pageControllerInitialOffset = null;
-            final nextOffset =
-                initialOffset != null &&
-                    pageForOffset(pages, initialOffset) == index
-                ? initialOffset
-                : pages[index].start;
-            _pendingPageOffset = null;
-            _pendingScrollOffset = null;
-            setState(() {
-              _displayPageNumber = window == null
-                  ? index + 1
-                  : window.firstPage + index;
-              _setOffset(nextOffset);
-            });
+        NotificationListener<UserScrollNotification>(
+          onNotification: (notification) {
+            if (notification.direction != ScrollDirection.idle) {
+              _registerManualNavigation();
+            }
+            return false;
           },
-          itemBuilder: (context, index) {
-            final page = pages[index];
-            return Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: _settings.horizontalPadding,
-              ),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: SelectableText(
-                  widget.text.substring(page.start, page.end),
-                  style: _textStyle,
+          child: PageView.builder(
+            key: ObjectKey(controller),
+            controller: controller,
+            itemCount: pages.length,
+            onPageChanged: (index) {
+              if (!identical(controller, _pageController)) return;
+              final initialOffset = _pageControllerInitialOffset;
+              _pageControllerInitialOffset = null;
+              final nextOffset =
+                  initialOffset != null &&
+                      pageForOffset(pages, initialOffset) == index
+                  ? initialOffset
+                  : pages[index].start;
+              _pendingPageOffset = null;
+              _pendingScrollOffset = null;
+              setState(() {
+                _displayPageNumber = window == null
+                    ? index + 1
+                    : window.firstPage + index;
+                _setOffset(nextOffset);
+              });
+            },
+            itemBuilder: (context, index) {
+              final page = pages[index];
+              return Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: _settings.horizontalPadding,
                 ),
-              ),
-            );
-          },
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: SelectableText(
+                    widget.text.substring(page.start, page.end),
+                    style: _textStyle,
+                  ),
+                ),
+              );
+            },
+          ),
         ),
         _buildPageIndicator(),
       ],
@@ -491,7 +521,7 @@ class _ReaderViewState extends State<ReaderView> {
   void _ensurePages(Size size) {
     _pageSize = size;
     final key = jsonEncode({
-      'algorithm': 1,
+      'algorithm': 2,
       'path': widget.path,
       'fileSize': widget.fileSize,
       'modified': widget.modified?.toUtc().toIso8601String(),
@@ -590,9 +620,14 @@ class _ReaderViewState extends State<ReaderView> {
       if (pendingTargetPage <= pages.length) {
         final targetOffset = pages[pendingTargetPage - 1].start;
         final generation = _paginationGeneration;
+        final navigationGeneration = _navigationGeneration;
         _pendingTargetPage = null;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || generation != _paginationGeneration) return;
+          if (!mounted ||
+              generation != _paginationGeneration ||
+              navigationGeneration != _navigationGeneration) {
+            return;
+          }
           _jumpToOffset(targetOffset);
         });
       } else if (complete) {
@@ -635,9 +670,13 @@ class _ReaderViewState extends State<ReaderView> {
     final index = visible.first.index;
     if (index >= _chunks.length) return;
     final pendingScrollOffset = _pendingScrollOffset;
-    if (pendingScrollOffset != null) return;
+    if (pendingScrollOffset != null) {
+      if (index == _chunkForOffset(pendingScrollOffset)) return;
+      _registerManualNavigation();
+    }
     final offset = _chunks[index].start;
     if (offset == _offset) return;
+    _invalidateQueuedNavigation();
     _pendingPageOffset = null;
     setState(() => _offset = offset);
     widget.store.updateProgress(
@@ -676,6 +715,7 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   void _jumpToOffset(int offset) {
+    _navigationGeneration++;
     _pendingTargetPage = null;
     _pendingPageOffset = null;
     setState(() => _setOffset(offset));
@@ -711,9 +751,12 @@ class _ReaderViewState extends State<ReaderView> {
     if (pages != null &&
         pages.isNotEmpty &&
         (_paginationComplete || _offset < pages.last.end) &&
-        _pageController?.hasClients == true) {
+        _pageController != null) {
       final page = pageForOffset(pages, _offset);
-      _pageController!.jumpToPage(page);
+      _pageController?.dispose();
+      _pageController = PageController(initialPage: page);
+      _pageControllerInitialOffset = _offset;
+      _displayPageNumber = page + 1;
     } else {
       final totalPages = _displayTotalPages;
       unawaited(
@@ -754,6 +797,7 @@ class _ReaderViewState extends State<ReaderView> {
       return;
     }
     if (sourceOffset == null) {
+      _navigationGeneration++;
       _pendingTargetPage = page;
       _showMessage('$page페이지까지 계산하고 있습니다. 계산되는 즉시 이동합니다.');
       return;
@@ -779,12 +823,14 @@ class _ReaderViewState extends State<ReaderView> {
         .toInt();
     final paginationGeneration = _paginationGeneration;
     final windowGeneration = ++_pageWindowGeneration;
+    final navigationGeneration = _navigationGeneration;
     bool cancelled() =>
         !mounted ||
         paginationGeneration != _paginationGeneration ||
-        windowGeneration != _pageWindowGeneration;
+        windowGeneration != _pageWindowGeneration ||
+        navigationGeneration != _navigationGeneration;
 
-    var pages = await paginateTextWindow(
+    var pages = await widget.windowPaginator(
       text: widget.text,
       startOffset: startOffset,
       size: size,
@@ -795,7 +841,7 @@ class _ReaderViewState extends State<ReaderView> {
     if (pages.isNotEmpty &&
         targetOffset >= pages.last.end &&
         pages.last.end < widget.text.length) {
-      pages = await paginateTextWindow(
+      pages = await widget.windowPaginator(
         text: widget.text,
         startOffset: targetOffset,
         size: size,
@@ -863,6 +909,7 @@ class _ReaderViewState extends State<ReaderView> {
       _showMessage('페이지를 계산하고 있습니다.');
       return;
     }
+    final exactRange = _paginationComplete;
     var value = '';
     final input = await showDialog<String>(
       context: context,
@@ -874,7 +921,7 @@ class _ReaderViewState extends State<ReaderView> {
           onChanged: (next) => value = next,
           decoration: InputDecoration(
             labelText: '페이지',
-            hintText: '1~$totalPages',
+            hintText: exactRange ? '1~$totalPages' : '약 1~$totalPages (추정)',
           ),
         ),
         actions: [
@@ -1161,6 +1208,7 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   void _applySettings(ReaderSettings settings) {
+    _registerManualNavigation();
     _paginationGeneration++;
     _pageWindowGeneration++;
     _pendingPageOffset = null;
@@ -1178,6 +1226,16 @@ class _ReaderViewState extends State<ReaderView> {
     widget.store.updateSettings(settings);
     _scheduleSave();
     _syncWakelock();
+  }
+
+  void _registerManualNavigation() {
+    _invalidateQueuedNavigation();
+    _pendingScrollOffset = null;
+  }
+
+  void _invalidateQueuedNavigation() {
+    _navigationGeneration++;
+    _pendingTargetPage = null;
   }
 
   Future<void> _syncWakelock() async {

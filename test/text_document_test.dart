@@ -66,4 +66,14 @@ void main() {
     expect(chunks.first.start, 0);
     expect(chunks.last.end, source.length);
   });
+
+  test('개행 없는 대형 텍스트도 단일 렌더링 청크로 만들지 않는다', () {
+    final source = List.filled(200000, '가').join();
+
+    final chunks = splitText(source, maxChars: 700);
+
+    expect(chunks.length, greaterThan(1));
+    expect(chunks.every((chunk) => chunk.text.length <= 64 * 1024), isTrue);
+    expect(chunks.map((chunk) => chunk.text).join(), source);
+  });
 }

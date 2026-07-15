@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -93,7 +94,8 @@ void main() {
   });
 
   testWidgets('하단과 햄버거 메뉴는 퍼센트 대신 현재 페이지를 표시한다', (tester) async {
-    final store = _MemoryStore();
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
     await _pumpReader(tester, store, _longText);
     await tester.pumpAndSettle();
 
@@ -187,7 +189,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).decoration?.hintText,
-      '1~4',
+      '약 1~4 (추정)',
     );
 
     completion.complete(exactPages);
@@ -223,7 +225,8 @@ void main() {
       exactPages.add(TextPage(start: start, end: end));
       start = end;
     }
-    final store = _MemoryStore();
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
     final completion = Completer<List<TextPage>>();
     PaginationBatchCallback? emitBatch;
 
@@ -259,7 +262,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       tester.widget<TextField>(find.byType(TextField)).decoration?.hintText,
-      '1~$totalPages',
+      '약 1~$totalPages (추정)',
     );
     await tester.enterText(find.byType(TextField), '$requestedPage');
     await tester.tap(find.text('이동'));
@@ -281,8 +284,14 @@ void main() {
 
   testWidgets('위치 이동창의 키보드와 취소는 페이지 계산을 다시 시작하지 않는다', (tester) async {
     var paginationCalls = 0;
-    const text = '키보드가 열려도 현재 위치와 페이지 크기를 유지한다.';
-    final store = _MemoryStore();
+    final text = List.filled(1000, '가').join();
+    final pages = <TextPage>[
+      for (var start = 0; start < text.length; start += 100)
+        TextPage(start: start, end: math.min(start + 100, text.length)),
+    ];
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page))
+      ..updateProgress('/book.txt', offset: 500, documentLength: text.length);
     addTearDown(tester.view.resetViewInsets);
 
     await tester.pumpWidget(
@@ -304,7 +313,7 @@ void main() {
                 isCancelled,
               }) async {
                 paginationCalls++;
-                return [TextPage(start: 0, end: text.length)];
+                return pages;
               },
         ),
       ),
@@ -323,7 +332,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(paginationCalls, 1);
-    expect(store.document('/book.txt').offset, 0);
+    expect(store.document('/book.txt').offset, 500);
   });
 
   testWidgets('계산이 끝나지 않아도 이미 색인된 페이지는 정확한 위치로 이동한다', (tester) async {
@@ -376,11 +385,11 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('스크롤 본문은 페이지 계산 뒤에도 페이지 경계에서 줄을 나누지 않는다', (tester) async {
-    const text = '원문에는 줄바꿈이 없는 한 줄 본문입니다';
+  testWidgets('스크롤 본문은 여러 청크의 무개행 원문에도 줄바꿈을 만들지 않는다', (tester) async {
+    final text = List.filled(1500, '가').join();
     final pages = <TextPage>[
-      for (var start = 0; start < text.length; start += 5)
-        TextPage(start: start, end: math.min(start + 5, text.length)),
+      for (var start = 0; start < text.length; start += 50)
+        TextPage(start: start, end: math.min(start + 50, text.length)),
     ];
 
     await tester.pumpWidget(
@@ -407,6 +416,72 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(text), findsOneWidget);
+  });
+
+  testWidgets('대기 중 사용자가 스크롤하면 오래된 페이지 이동을 취소한다', (tester) async {
+    const indexedPages = [
+      TextPage(start: 0, end: 100),
+      TextPage(start: 100, end: 200),
+      TextPage(start: 200, end: 300),
+      TextPage(start: 300, end: 400),
+      TextPage(start: 400, end: 500),
+    ];
+    final store = _MemoryStore();
+    final completion = Completer<List<TextPage>>();
+    PaginationBatchCallback? emitBatch;
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: _longText,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                emitBatch = onBatch;
+                onBatch?.call(indexedPages.take(1).toList());
+                return completion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '5');
+    await tester.tap(find.text('이동'));
+    await tester.pumpAndSettle();
+
+    for (var index = 0; index < 5; index++) {
+      await tester.drag(
+        find.byType(ScrollablePositionedList),
+        const Offset(0, -400),
+      );
+      await tester.pump();
+    }
+    final manualOffset = store.document('/book.txt').offset;
+
+    emitBatch?.call(indexedPages.sublist(1));
+    await tester.pump();
+    await tester.pump();
+    expect(store.document('/book.txt').offset, manualOffset);
+
+    completion.complete(indexedPages);
+    await tester.pump();
   });
 
   testWidgets('강제 인코딩마다 별도 페이지 캐시를 사용한다', (tester) async {
@@ -634,6 +709,82 @@ void main() {
     expect(find.textContaining('찾을본문'), findsWidgets);
   });
 
+  testWidgets('새 이동은 완료가 늦은 검색 페이지 창을 취소한다', (tester) async {
+    const text = '첫페이지둘째페이지찾을본문';
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
+    final paginationCompletion = Completer<List<TextPage>>();
+    final windowCompletion = Completer<List<TextPage>>();
+    var windowStarted = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                onBatch?.call(const [TextPage(start: 0, end: 4)]);
+                return paginationCompletion.future;
+              },
+          windowPaginator:
+              ({
+                required text,
+                required startOffset,
+                required size,
+                required style,
+                onLayout,
+                isCancelled,
+              }) {
+                windowStarted = true;
+                return windowCompletion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('본문 검색'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '찾을본문');
+    await tester.tap(find.text('검색'));
+    await tester.pump();
+    expect(windowStarted, isTrue);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '1');
+    await tester.tap(find.text('이동'));
+    await tester.pump();
+    expect(store.document('/book.txt').offset, 0);
+
+    windowCompletion.complete([TextPage(start: 9, end: text.length)]);
+    await tester.pump();
+    await tester.pump();
+    expect(store.document('/book.txt').offset, 0);
+
+    paginationCompletion.complete([
+      const TextPage(start: 0, end: 4),
+      TextPage(start: 4, end: text.length),
+    ]);
+    await tester.pump();
+  });
+
   testWidgets('계산 중에도 먼 북마크를 즉시 표시한다', (tester) async {
     const text = '첫페이지둘째페이지찾을본문';
     final store = _MemoryStore()
@@ -774,6 +925,63 @@ void main() {
       );
       await tester.pump();
     }
+    await tester.pumpAndSettle();
+
+    expect(store.document('/book.txt').offset, lessThan(jumpedOffset));
+  });
+
+  testWidgets('마우스 휠 스크롤도 페이지 이동 보호 상태를 해제한다', (tester) async {
+    final store = _MemoryStore();
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpReader(tester, store, _longText);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    final totalPages = int.parse(field.decoration!.hintText!.substring(2));
+    await tester.enterText(find.byType(TextField), '$totalPages');
+    await tester.tap(find.text('이동'));
+    await tester.pumpAndSettle();
+    final jumpedOffset = store.document('/book.txt').offset;
+
+    final reader = find.byType(ScrollablePositionedList);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(reader),
+        scrollDelta: const Offset(0, -1800),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(store.document('/book.txt').offset, lessThan(jumpedOffset));
+  });
+
+  testWidgets('비포인터 스크롤이 이동 뒤 저장 위치를 갱신한다', (tester) async {
+    final store = _MemoryStore();
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await _pumpReader(tester, store, _longText);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    final field = tester.widget<TextField>(find.byType(TextField));
+    final totalPages = int.parse(field.decoration!.hintText!.substring(2));
+    await tester.enterText(find.byType(TextField), '$totalPages');
+    await tester.tap(find.text('이동'));
+    await tester.pumpAndSettle();
+    final jumpedOffset = store.document('/book.txt').offset;
+
+    final list = tester.widget<ScrollablePositionedList>(
+      find.byType(ScrollablePositionedList),
+    );
+    list.itemScrollController!.jumpTo(index: 0);
     await tester.pumpAndSettle();
 
     expect(store.document('/book.txt').offset, lessThan(jumpedOffset));

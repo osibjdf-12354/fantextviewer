@@ -75,7 +75,15 @@ List<TextChunk> splitText(String text, {int maxChars = 1200}) {
     var end = (start + maxChars).clamp(0, text.length);
     if (end < text.length) {
       final newline = text.lastIndexOf('\n', end);
-      if (newline >= start + maxChars ~/ 2) end = newline + 1;
+      if (newline >= start + maxChars ~/ 2) {
+        end = newline + 1;
+      } else {
+        final nextNewline = text.indexOf('\n', end);
+        final hardLimit = (start + 64 * 1024).clamp(0, text.length);
+        end = nextNewline < 0 || nextNewline + 1 > hardLimit
+            ? hardLimit
+            : nextNewline + 1;
+      }
       if (_splitsSurrogatePair(text, end)) end--;
     }
     result.add(TextChunk._(start: start, end: end, source: text));
