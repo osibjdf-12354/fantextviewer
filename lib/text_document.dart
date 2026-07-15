@@ -13,11 +13,17 @@ class DecodedText {
 }
 
 class TextChunk {
-  const TextChunk({required this.start, required this.end, required this.text});
+  const TextChunk._({
+    required this.start,
+    required this.end,
+    required this._source,
+  });
 
   final int start;
   final int end;
-  final String text;
+  final String _source;
+
+  String get text => _source.substring(start, end);
 }
 
 TextEncoding detectTextEncoding(Uint8List bytes) {
@@ -72,9 +78,7 @@ List<TextChunk> splitText(String text, {int maxChars = 1200}) {
       if (newline >= start + maxChars ~/ 2) end = newline + 1;
       if (_splitsSurrogatePair(text, end)) end--;
     }
-    result.add(
-      TextChunk(start: start, end: end, text: text.substring(start, end)),
-    );
+    result.add(TextChunk._(start: start, end: end, source: text));
     start = end;
   }
   return result;

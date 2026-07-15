@@ -424,6 +424,7 @@ class _ReaderViewState extends State<ReaderView> {
           if (!mounted || generation != _paginationGeneration) return;
           setState(() => _paginationProgress = progress);
         },
+        isCancelled: () => !mounted || generation != _paginationGeneration,
       );
       if (!mounted || generation != _paginationGeneration) return;
       final initialPage = pageForOffset(pages, _offset);
@@ -987,7 +988,10 @@ class _RgbEditorState extends State<_RgbEditor> {
               key: Key('$prefix-$channel'),
               controller: _controllers[start + index],
               keyboardType: TextInputType.number,
-              onChanged: (_) => _emit(),
+              onChanged: (_) {
+                setState(() {});
+                _emit();
+              },
               decoration: InputDecoration(
                 labelText: const ['R', 'G', 'B'][index],
                 errorText: _channelError(_controllers[start + index].text),

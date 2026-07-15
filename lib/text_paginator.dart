@@ -14,6 +14,7 @@ Future<List<TextPage>> paginateText({
   required Size size,
   required TextStyle style,
   ValueChanged<double>? onProgress,
+  bool Function()? isCancelled,
 }) async {
   if (text.isEmpty) return const [];
   if (size.width <= 0 || size.height <= 0) {
@@ -23,6 +24,7 @@ Future<List<TextPage>> paginateText({
   final pages = <TextPage>[];
   var start = 0;
   while (start < text.length) {
+    if (isCancelled?.call() == true) break;
     final end = _nextPageEnd(text, start, size, style);
     pages.add(TextPage(start: start, end: end));
     start = end;
