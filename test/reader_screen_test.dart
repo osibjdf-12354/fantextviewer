@@ -151,6 +151,74 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining(RegExp(r'^\d+페이지$')), findsOneWidget);
   });
+
+  testWidgets('표시 설정은 단계 버튼으로 값과 과거 소수값을 조절한다', (tester) async {
+    final store = _MemoryStore()
+      ..updateSettings(
+        const ReaderSettings(
+          fontSize: 20.4,
+          lineHeight: 1.66,
+          horizontalPadding: 20.4,
+        ),
+      );
+    await _pumpReader(tester, store, '본문');
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(Slider), findsNothing);
+    expect(find.byKey(const Key('font-size-increase')), findsOneWidget);
+    await tester.ensureVisible(find.byKey(const Key('font-size-increase')));
+    await tester.tap(find.byKey(const Key('font-size-increase')));
+    await tester.tap(find.byKey(const Key('line-height-decrease')));
+    await tester.tap(find.byKey(const Key('horizontal-padding-increase')));
+    await tester.ensureVisible(find.text('적용'));
+    await tester.tap(find.text('적용'));
+    await tester.pumpAndSettle();
+
+    expect(store.data.settings.fontSize, 21);
+    expect(store.data.settings.lineHeight, 1.6);
+    expect(store.data.settings.horizontalPadding, 21);
+  });
+
+  testWidgets('단계 버튼은 최솟값과 최댓값을 넘지 않는다', (tester) async {
+    final store = _MemoryStore()
+      ..updateSettings(
+        const ReaderSettings(
+          fontSize: 36,
+          lineHeight: 1.2,
+          horizontalPadding: 40,
+        ),
+      );
+    await _pumpReader(tester, store, '본문');
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('font-size-increase')), findsOneWidget);
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('font-size-increase')))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('line-height-decrease')))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.byKey(const Key('horizontal-padding-increase')),
+          )
+          .onPressed,
+      isNull,
+    );
+  });
 }
 
 Future<void> _pumpReader(

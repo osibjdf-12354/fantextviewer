@@ -649,7 +649,16 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   Future<void> _showSettings() async {
-    var draft = _settings;
+    var draft = _settings.copyWith(
+      fontSize: _settings.fontSize.round().clamp(14, 36).toDouble(),
+      lineHeight: ((_settings.lineHeight * 10).round() / 10)
+          .clamp(1.2, 2.2)
+          .toDouble(),
+      horizontalPadding: _settings.horizontalPadding
+          .round()
+          .clamp(8, 40)
+          .toDouble(),
+    );
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -690,29 +699,38 @@ class _ReaderViewState extends State<ReaderView> {
                       ),
                     ],
                   ),
-                  _SettingSlider(
+                  _SettingStepper(
+                    settingKey: 'font-size',
                     label: '글자 크기',
                     value: draft.fontSize,
                     min: 14,
                     max: 36,
+                    step: 1,
+                    fractionDigits: 0,
                     onChanged: (value) => setSheetState(() {
                       draft = draft.copyWith(fontSize: value);
                     }),
                   ),
-                  _SettingSlider(
+                  _SettingStepper(
+                    settingKey: 'line-height',
                     label: '줄 간격',
                     value: draft.lineHeight,
                     min: 1.2,
                     max: 2.2,
+                    step: .1,
+                    fractionDigits: 1,
                     onChanged: (value) => setSheetState(() {
                       draft = draft.copyWith(lineHeight: value);
                     }),
                   ),
-                  _SettingSlider(
+                  _SettingStepper(
+                    settingKey: 'horizontal-padding',
                     label: '좌우 여백',
                     value: draft.horizontalPadding,
                     min: 8,
                     max: 40,
+                    step: 1,
+                    fractionDigits: 0,
                     onChanged: (value) => setSheetState(() {
                       draft = draft.copyWith(horizontalPadding: value);
                     }),
@@ -721,16 +739,34 @@ class _ReaderViewState extends State<ReaderView> {
                   const Text('색상 템플릿'),
                   Wrap(
                     spacing: 8,
+                    runSpacing: 8,
                     children: _colorTemplates
                         .map(
-                          (template) => OutlinedButton(
+                          (template) => IconButton(
+                            key: Key('color-template-${template.name}'),
+                            tooltip: template.name,
                             onPressed: () => setSheetState(() {
                               draft = draft.copyWith(
                                 background: template.background,
                                 foreground: template.foreground,
                               );
                             }),
-                            child: Text(template.name),
+                            icon: Container(
+                              width: 36,
+                              height: 36,
+                              alignment: Alignment.center,
+                              decoration: BoxDecoration(
+                                color: Color(template.background.value),
+                                border: Border.all(color: Colors.black26),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '가',
+                                style: TextStyle(
+                                  color: Color(template.foreground.value),
+                                ),
+                              ),
+                            ),
                           ),
                         )
                         .toList(),
@@ -861,32 +897,58 @@ class _ReaderViewState extends State<ReaderView> {
   }
 }
 
-class _SettingSlider extends StatelessWidget {
-  const _SettingSlider({
+class _SettingStepper extends StatelessWidget {
+  const _SettingStepper({
+    required this.settingKey,
     required this.label,
     required this.value,
     required this.min,
     required this.max,
+    required this.step,
+    required this.fractionDigits,
     required this.onChanged,
   });
 
+  final String settingKey;
   final String label;
   final double value;
   final double min;
   final double max;
+  final double step;
+  final int fractionDigits;
   final ValueChanged<double> onChanged;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
-        SizedBox(width: 72, child: Text('$label\n${value.toStringAsFixed(1)}')),
-        Expanded(
-          child: Slider(value: value, min: min, max: max, onChanged: onChanged),
+        Expanded(child: Text(label)),
+        IconButton(
+          key: Key('$settingKey-decrease'),
+          tooltip: '$label 줄이기',
+          onPressed: value <= min ? null : () => onChanged(_next(-step)),
+          icon: const Icon(Icons.remove),
+        ),
+        SizedBox(
+          width: 52,
+          child: Text(
+            value.toStringAsFixed(fractionDigits),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        IconButton(
+          key: Key('$settingKey-increase'),
+          tooltip: '$label 늘리기',
+          onPressed: value >= max ? null : () => onChanged(_next(step)),
+          icon: const Icon(Icons.add),
         ),
       ],
     );
   }
+
+  double _next(double delta) => double.parse(
+    (value + delta).clamp(min, max).toStringAsFixed(fractionDigits),
+  );
 }
 
 class _RgbEditor extends StatefulWidget {

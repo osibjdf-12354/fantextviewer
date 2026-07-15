@@ -22,10 +22,19 @@ void main() {
     await tester.tap(find.text('표시 설정'));
     await tester.pumpAndSettle();
 
-    expect(find.text('기본 연두'), findsOneWidget);
-    expect(find.text('종이'), findsOneWidget);
-    expect(find.text('밤'), findsOneWidget);
-    expect(find.text('세피아'), findsOneWidget);
+    for (final name in ['기본 연두', '종이', '밤', '세피아']) {
+      expect(find.byKey(Key('color-template-$name')), findsOneWidget);
+      expect(find.byTooltip(name), findsOneWidget);
+      expect(find.text(name), findsNothing);
+    }
+    final templateButton = tester.widget<IconButton>(
+      find.byKey(const Key('color-template-기본 연두')),
+    );
+    final swatch = templateButton.icon as Container;
+    expect(
+      (swatch.decoration! as BoxDecoration).color,
+      const Color(0xffc4ecbb),
+    );
 
     final red = find.byKey(const Key('background-red'));
     await tester.ensureVisible(red);
