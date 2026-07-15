@@ -81,7 +81,7 @@ int estimatedPageForOffset(
   required int totalPages,
 }) {
   if (textLength <= 1 || totalPages <= 1) return 1;
-  return 1 + ((offset.clamp(0, textLength - 1) / (textLength - 1)) * (totalPages - 1)).round();
+  return 1 + ((offset.clamp(0, textLength - 1) / (textLength - 1)) * (totalPages - 1)).floor();
 }
 
 int estimatedOffsetForPage(
