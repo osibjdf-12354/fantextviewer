@@ -93,6 +93,22 @@ void main() {
     expect(layoutLengths[1], lessThan(2048));
   });
 
+  test(
+    'stable text usually needs one layout probe per page after warmup',
+    () async {
+      final layoutLengths = <int>[];
+      final pages = await paginateText(
+        text: List.filled(500, '가나다라마바사아자차카타파하 ').join(),
+        size: const Size(160, 120),
+        style: const TextStyle(fontSize: 20, height: 1.5),
+        onLayout: layoutLengths.add,
+      );
+
+      expect(pages.length, greaterThan(20));
+      expect(layoutLengths.length, lessThan(pages.length * 1.5));
+    },
+  );
+
   test('bounds layout probes when page density changes', () async {
     final layoutLengths = <int>[];
     final text =
@@ -145,33 +161,11 @@ void main() {
       estimatedPageForOffset(125000, textLength: 250000, totalPages: 1000),
       500,
     );
-    expect(
-      estimatedOffsetForPage(500, textLength: 250000, totalPages: 1000),
-      inInclusiveRange(124000, 126000),
-    );
   });
 
   test('추정 페이지와 위치를 문서 경계로 제한한다', () {
     expect(estimatedPageForOffset(-1, textLength: 1000, totalPages: 10), 1);
     expect(estimatedPageForOffset(5000, textLength: 1000, totalPages: 10), 10);
-    expect(estimatedOffsetForPage(0, textLength: 1000, totalPages: 10), 0);
-    expect(estimatedOffsetForPage(99, textLength: 1000, totalPages: 10), 999);
-  });
-
-  test('estimated page offsets round-trip to every requested page', () {
-    for (var page = 1; page <= 333; page++) {
-      final offset = estimatedOffsetForPage(
-        page,
-        textLength: 1000,
-        totalPages: 333,
-      );
-
-      expect(
-        estimatedPageForOffset(offset, textLength: 1000, totalPages: 333),
-        page,
-        reason: 'page $page mapped through offset $offset',
-      );
-    }
   });
 
   test('원문 중간에서 제한된 수의 페이지 구간을 계산한다', () async {

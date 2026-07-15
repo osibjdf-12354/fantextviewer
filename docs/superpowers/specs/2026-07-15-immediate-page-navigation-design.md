@@ -13,9 +13,9 @@ Large TXT files must accept a page-number jump before the full exact page index 
 Use two page models:
 
 1. The existing exact page index continues to build progressively and remains the authoritative model when complete. Its cache remains unchanged.
-2. Until that index is complete, a provisional model estimates page count and the source offset for a requested page from measured characters per rendered page. A request for page `N` immediately lays out a small source window around the estimated offset and displays it. The requested page number is retained as the window's display-page anchor.
+2. Until that index is complete, the estimated total is display/input guidance only. If page `N` is already in the progressive exact prefix, use its exact start immediately. Otherwise keep the current reading position, queue `N`, and jump as soon as the progressive index reaches that page. A character-ratio estimate must never be persisted as page `N`.
 
-The provisional window is independent of the progressive exact-prefix list, so later background batches cannot snap the reader back to the beginning. When the exact index becomes ready, the reader replaces the provisional window with the exact page containing the same source offset.
+Source-offset navigation such as search and bookmarks may still render a bounded local window because their target offset is already exact. Page-number navigation may not use that window to invent a page-to-offset mapping.
 
 The provisional model must preserve all source text. A window may begin at an estimated source position, but it aligns to a nearby line boundary and uses the existing `TextPainter` boundary calculation inside the window. Exact completion is the final correction mechanism.
 
@@ -25,8 +25,8 @@ The provisional model must preserve all source text. A window may begin at an es
 - Bottom-right indicator: `N페이지`.
 - No percentage appears in either location.
 - With a complete index, `N` is `pageForOffset(exactPages, offset) + 1`.
-- While incomplete, `N` is the active provisional window page or the page estimated from the current source offset.
-- Jumping to a requested page displays that requested number immediately; it is not a hard-coded example value.
+- While incomplete, `N` is derived from the exact prefix when it covers the current offset; source-offset windows keep their anchored display number until exact adoption.
+- Jumping to an unindexed requested page leaves the current position unchanged, reports that the target is being calculated, and moves automatically when `pages[N - 1]` exists.
 - The jump dialog accepts only integer page numbers and validates against the currently displayed estimated or exact total.
 
 ## Navigation Flow
@@ -34,9 +34,9 @@ The provisional model must preserve all source text. A window may begin at an es
 1. Open a TXT file and start exact pagination as today.
 2. Derive a provisional characters-per-page value from available exact prefix pages; use the existing initial probe as a fallback before the first batch.
 3. Open the page dialog even while exact pagination is incomplete.
-4. Convert the requested page to a clamped source offset and build a small rendered window there.
-5. Show the window and `N페이지` immediately while exact pagination continues.
-6. On exact completion, keep the source offset and switch to the authoritative exact page.
+4. Use `pages[N - 1].start` immediately when the progressive prefix already contains `N`.
+5. Otherwise store `N` as a pending target without modifying or saving the current source offset.
+6. Fulfil the target on the first batch that contains `N`; if EOF arrives first, reject it against the exact final range.
 
 Scroll mode uses the same provisional page-number conversion for its label and can jump directly through the existing chunk index. Page mode uses the rendered provisional window.
 
@@ -44,6 +44,7 @@ Scroll mode uses the same provisional page-number conversion for its label and c
 
 - Empty text has no jump target.
 - Stale window and pagination callbacks are ignored with the existing generation guard.
+- Opening the numeric keyboard must not resize the reader viewport or invalidate pagination; the dialog handles its own keyboard inset.
 - Display-setting changes invalidate both exact and provisional layouts.
 - Cache failures remain non-fatal.
 - Page input is clamped only after validation; malformed or out-of-range input receives the existing page-range message.

@@ -25,6 +25,7 @@ void main() {
     final store = _MemoryStore()
       ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
     final completion = Completer<List<TextPage>>();
+    PaginationBatchCallback? emitBatch;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -44,6 +45,7 @@ void main() {
                 onLayout,
                 isCancelled,
               }) {
+                emitBatch = onBatch;
                 onBatch?.call([exactPages.first]);
                 return completion.future;
               },
@@ -61,7 +63,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(completion.isCompleted, isFalse);
-    expect(store.document('/book.txt').offset, greaterThan(0));
+    expect(store.document('/book.txt').offset, 0);
+    expect(find.text('5페이지까지 계산하고 있습니다. 계산되는 즉시 이동합니다.'), findsOneWidget);
+
+    emitBatch?.call(exactPages.sublist(1, 5));
+    await tester.pump();
+    await tester.pump();
+
+    expect(store.document('/book.txt').offset, exactPages[4].start);
     expect(find.text('5페이지'), findsOneWidget);
     expect(find.textContaining('%'), findsNothing);
     final selectedOffset = store.document('/book.txt').offset;
@@ -190,6 +199,131 @@ void main() {
 
     expect(find.text('1~3 사이 페이지를 입력해 주세요.'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('비균일한 대형 파일도 요청한 1716페이지의 정확한 색인을 기다린다', (tester) async {
+    const textLength = 1299500;
+    const totalPages = 12995;
+    const requestedPage = 1716;
+    final text = List.filled(textLength, '가').join();
+    final exactPages = <TextPage>[];
+    var start = 0;
+    for (var index = 0; index < 6095; index++) {
+      final length = index < 8 ? 100 : 28;
+      exactPages.add(TextPage(start: start, end: start + length));
+      start += length;
+    }
+    final remainingStart = start;
+    final remainingPages = totalPages - exactPages.length;
+    final remainingCharacters = textLength - remainingStart;
+    for (var index = 0; index < remainingPages; index++) {
+      final end =
+          remainingStart +
+          ((index + 1) * remainingCharacters ~/ remainingPages);
+      exactPages.add(TextPage(start: start, end: end));
+      start = end;
+    }
+    final store = _MemoryStore();
+    final completion = Completer<List<TextPage>>();
+    PaginationBatchCallback? emitBatch;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                emitBatch = onBatch;
+                onBatch?.call(exactPages.sublist(0, 8));
+                return completion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).decoration?.hintText,
+      '1~$totalPages',
+    );
+    await tester.enterText(find.byType(TextField), '$requestedPage');
+    await tester.tap(find.text('이동'));
+    await tester.pumpAndSettle();
+
+    expect(store.document('/book.txt').offset, 0);
+
+    emitBatch?.call(exactPages.sublist(8, requestedPage));
+    await tester.pump();
+    await tester.pump();
+    final exactRequestedOffset = exactPages[requestedPage - 1].start;
+    expect(store.document('/book.txt').offset, exactRequestedOffset);
+    expect(find.text('$requestedPage페이지'), findsWidgets);
+
+    completion.complete(exactPages);
+    await tester.pumpAndSettle();
+    expect(store.document('/book.txt').offset, exactRequestedOffset);
+  });
+
+  testWidgets('위치 이동창의 키보드와 취소는 페이지 계산을 다시 시작하지 않는다', (tester) async {
+    var paginationCalls = 0;
+    const text = '키보드가 열려도 현재 위치와 페이지 크기를 유지한다.';
+    final store = _MemoryStore();
+    addTearDown(tester.view.resetViewInsets);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async {
+                paginationCalls++;
+                return [TextPage(start: 0, end: text.length)];
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(paginationCalls, 1);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('취소'));
+    tester.view.viewInsets = FakeViewPadding.zero;
+    await tester.pumpAndSettle();
+
+    expect(paginationCalls, 1);
+    expect(store.document('/book.txt').offset, 0);
   });
 
   testWidgets('계산이 끝나지 않아도 이미 색인된 페이지는 정확한 위치로 이동한다', (tester) async {

@@ -199,10 +199,10 @@ class _ReaderViewState extends State<ReaderView> {
   final _itemScrollController = ItemScrollController();
   final _itemPositionsListener = ItemPositionsListener.create();
   Timer? _saveTimer;
-  Timer? _pendingScrollTimer;
   List<TextPage>? _pages;
   PageController? _pageController;
   int? _pageControllerInitialOffset;
+  int? _pendingTargetPage;
   int? _pendingPageOffset;
   int? _pendingScrollOffset;
   Size? _pageSize;
@@ -280,7 +280,6 @@ class _ReaderViewState extends State<ReaderView> {
   void dispose() {
     _itemPositionsListener.itemPositions.removeListener(_recordScrollPosition);
     _saveTimer?.cancel();
-    _pendingScrollTimer?.cancel();
     _pageController?.dispose();
     unawaited(widget.store.save());
     if (_wakelockEnabled) unawaited(WakelockPlus.disable());
@@ -292,6 +291,7 @@ class _ReaderViewState extends State<ReaderView> {
     final background = Color(_settings.background.value);
     final foreground = Color(_settings.foreground.value);
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: background,
       appBar: AppBar(
         toolbarHeight: 48,
@@ -375,8 +375,6 @@ class _ReaderViewState extends State<ReaderView> {
           onNotification: (notification) {
             if (notification is ScrollStartNotification &&
                 notification.dragDetails != null) {
-              _pendingScrollTimer?.cancel();
-              _pendingScrollTimer = null;
               _pendingScrollOffset = null;
             }
             return false;
@@ -432,6 +430,7 @@ class _ReaderViewState extends State<ReaderView> {
           itemCount: pages.length,
           onPageChanged: (index) {
             if (!identical(controller, _pageController)) return;
+            _pendingTargetPage = null;
             final initialOffset = _pageControllerInitialOffset;
             _pageControllerInitialOffset = null;
             final nextOffset =
@@ -440,8 +439,6 @@ class _ReaderViewState extends State<ReaderView> {
                 ? initialOffset
                 : pages[index].start;
             _pendingPageOffset = null;
-            _pendingScrollTimer?.cancel();
-            _pendingScrollTimer = null;
             _pendingScrollOffset = null;
             setState(() {
               _displayPageNumber = window == null
@@ -588,6 +585,24 @@ class _ReaderViewState extends State<ReaderView> {
       _pages = pages;
       _paginationComplete = complete;
     });
+    final pendingTargetPage = _pendingTargetPage;
+    if (pendingTargetPage != null) {
+      if (pendingTargetPage <= pages.length) {
+        final targetOffset = pages[pendingTargetPage - 1].start;
+        final generation = _paginationGeneration;
+        _pendingTargetPage = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || generation != _paginationGeneration) return;
+          _jumpToOffset(targetOffset);
+        });
+      } else if (complete) {
+        _pendingTargetPage = null;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _showMessage('1~${pages.length} 사이 페이지를 입력해 주세요.');
+        });
+      }
+    }
     final pendingOffset = _pendingPageOffset;
     if (_settings.mode == ReadingMode.page &&
         _pageWindow == null &&
@@ -620,15 +635,7 @@ class _ReaderViewState extends State<ReaderView> {
     final index = visible.first.index;
     if (index >= _chunks.length) return;
     final pendingScrollOffset = _pendingScrollOffset;
-    if (pendingScrollOffset != null) {
-      final targetIndex = _chunkForOffset(pendingScrollOffset);
-      if (visible.any((position) => position.index == targetIndex)) {
-        _pendingScrollTimer?.cancel();
-        _pendingScrollTimer = null;
-        _pendingScrollOffset = null;
-      }
-      return;
-    }
+    if (pendingScrollOffset != null) return;
     final offset = _chunks[index].start;
     if (offset == _offset) return;
     _pendingPageOffset = null;
@@ -669,17 +676,11 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   void _jumpToOffset(int offset) {
+    _pendingTargetPage = null;
     _pendingPageOffset = null;
     setState(() => _setOffset(offset));
     if (_settings.mode == ReadingMode.scroll) {
       _pendingScrollOffset = _offset;
-      _pendingScrollTimer?.cancel();
-      final pendingOffset = _offset;
-      _pendingScrollTimer = Timer(const Duration(milliseconds: 250), () {
-        if (!mounted || _pendingScrollOffset != pendingOffset) return;
-        _pendingScrollOffset = null;
-        _pendingScrollTimer = null;
-      });
       if (_itemScrollController.isAttached) {
         _itemScrollController.jumpTo(index: _chunkForOffset(_offset));
       }
@@ -729,13 +730,16 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   Future<void> _jumpToPageNumber(int page, {int? sourceOffset}) async {
-    final totalPages = _displayTotalPages;
-    if (page < 1 || page > totalPages) {
-      _showMessage('1~$totalPages 사이 페이지를 입력해 주세요.');
+    if (page < 1) {
+      _showMessage('1 이상의 페이지를 입력해 주세요.');
       return;
     }
     final exactPages = _completePages;
     if (exactPages != null) {
+      if (sourceOffset == null && page > exactPages.length) {
+        _showMessage('1~${exactPages.length} 사이 페이지를 입력해 주세요.');
+        return;
+      }
       final exactPage = sourceOffset == null
           ? page - 1
           : pageForOffset(exactPages, sourceOffset);
@@ -749,14 +753,14 @@ class _ReaderViewState extends State<ReaderView> {
       _jumpToOffset(indexedPages[page - 1].start);
       return;
     }
+    if (sourceOffset == null) {
+      _pendingTargetPage = page;
+      _showMessage('$page페이지까지 계산하고 있습니다. 계산되는 즉시 이동합니다.');
+      return;
+    }
 
-    final targetOffset =
-        sourceOffset ??
-        estimatedOffsetForPage(
-          page,
-          textLength: widget.text.length,
-          totalPages: totalPages,
-        );
+    final totalPages = _displayTotalPages;
+    final targetOffset = sourceOffset;
     if (_settings.mode == ReadingMode.scroll) {
       _jumpToOffset(targetOffset);
       return;
@@ -815,12 +819,12 @@ class _ReaderViewState extends State<ReaderView> {
 
     _pageController?.dispose();
     _pageController = PageController(initialPage: localPage);
-    _pageControllerInitialOffset = sourceOffset ?? pages[localPage].start;
+    _pageControllerInitialOffset = sourceOffset;
     setState(() {
       _pageWindow = (pages: pages, firstPage: firstPage);
       _displayPageNumber = page;
       _pendingPageOffset = null;
-      _setOffset(sourceOffset ?? pages[localPage].start);
+      _setOffset(sourceOffset);
     });
   }
 
@@ -888,7 +892,10 @@ class _ReaderViewState extends State<ReaderView> {
     if (input == null || !mounted) return;
     final page = int.tryParse(input.trim());
     final latestTotalPages = _displayTotalPages;
-    if (page == null || page < 1 || page > latestTotalPages) {
+    final exactPages = _completePages;
+    if (page == null ||
+        page < 1 ||
+        (exactPages != null && page > exactPages.length)) {
       _showMessage('1~$latestTotalPages 사이 페이지를 입력해 주세요.');
       return;
     }
@@ -1157,8 +1164,6 @@ class _ReaderViewState extends State<ReaderView> {
     _paginationGeneration++;
     _pageWindowGeneration++;
     _pendingPageOffset = null;
-    _pendingScrollTimer?.cancel();
-    _pendingScrollTimer = null;
     _pendingScrollOffset = null;
     _pageController?.dispose();
     _pageController = null;

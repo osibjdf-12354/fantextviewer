@@ -16,6 +16,10 @@
 - Page-number jump remains integer-only and works while exact pagination is pending.
 - No new dependency or file-streaming rewrite.
 
+## QA Correction
+
+Device QA proved that character-ratio page jumps can map a requested page to a very different exact page when page density is nonuniform. The implementation therefore treats the estimated total as hint-only: exact-prefix pages jump immediately, unindexed page numbers wait for the prefix to reach them, and only `pages[N - 1].start` is persisted. The reader Scaffold also ignores IME resizing so opening/cancelling the numeric dialog cannot invalidate the page layout.
+
 ---
 
 ### Task 1: Provisional page mapping and bounded window pagination
@@ -25,7 +29,7 @@
 - Test: `test/text_paginator_test.dart`
 
 **Interfaces:**
-- Produces: `estimatedPageCount`, `estimatedPageForOffset`, `estimatedOffsetForPage`, and `paginateTextWindow`.
+- Produces: `estimatedPageCount`, `estimatedPageForOffset`, and `paginateTextWindow`.
 - Consumes: existing `TextPage`, `pageForOffset`, and `_nextPageEnd`.
 
 - [ ] **Step 1: Write failing mapping tests**

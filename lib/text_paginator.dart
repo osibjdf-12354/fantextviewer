@@ -43,7 +43,7 @@ Future<List<TextPage>> paginateText({
     );
     if (end == null) break;
     pages.add(TextPage(start: start, end: end));
-    probeLength = end - start;
+    probeLength = ((end - start) * 1.25).ceil();
     start = end;
     if (pages.length - batchStart == 8) {
       onBatch?.call(pages.sublist(batchStart));
@@ -97,7 +97,7 @@ Future<List<TextPage>> paginateTextWindow({
     );
     if (end == null) break;
     pages.add(TextPage(start: start, end: end));
-    probeLength = end - start;
+    probeLength = ((end - start) * 1.25).ceil();
     start = end;
     if (pages.length % 8 == 0) await Future<void>.delayed(Duration.zero);
   }
@@ -127,16 +127,6 @@ int estimatedPageForOffset(
   if (textLength <= 1 || totalPages <= 1) return 1;
   final ratio = offset.clamp(0, textLength - 1) / (textLength - 1);
   return 1 + (ratio * (totalPages - 1)).floor();
-}
-
-int estimatedOffsetForPage(
-  int page, {
-  required int textLength,
-  required int totalPages,
-}) {
-  if (textLength <= 1 || totalPages <= 1) return 0;
-  final ratio = (page.clamp(1, totalPages) - 1) / (totalPages - 1);
-  return (ratio * (textLength - 1)).ceil();
 }
 
 int pageForOffset(List<TextPage> pages, int offset) {
