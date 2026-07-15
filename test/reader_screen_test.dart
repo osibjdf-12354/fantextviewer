@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -7,10 +8,62 @@ import 'package:geulbom/app_store.dart';
 import 'package:geulbom/models.dart';
 import 'package:geulbom/reader_screen.dart';
 import 'package:geulbom/text_document.dart';
+import 'package:geulbom/text_paginator.dart';
 
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
 
 void main() {
+  testWidgets('페이지 계산 완료 전에 저장 위치를 덮는 배치를 표시한다', (tester) async {
+    const text = '첫페이지둘째페이지';
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page))
+      ..updateProgress('/book.txt', offset: 4, documentLength: text.length);
+    final completion = Completer<List<TextPage>>();
+    PaginationBatchCallback? emitBatch;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                emitBatch = onBatch;
+                onBatch?.call(const [TextPage(start: 0, end: 4)]);
+                return completion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('페이지를 계산하고 있습니다.'), findsOneWidget);
+    expect(find.text('첫페이지'), findsNothing);
+
+    emitBatch?.call([TextPage(start: 4, end: text.length)]);
+    await tester.pump();
+
+    expect(completion.isCompleted, isFalse);
+    expect(find.text('둘째페이지'), findsOneWidget);
+
+    completion.complete([
+      const TextPage(start: 0, end: 4),
+      TextPage(start: 4, end: text.length),
+    ]);
+    await tester.pump();
+  });
+
   testWidgets('햄버거 메뉴에서 읽기 모드와 RGB 배경색을 바꾼다', (tester) async {
     final store = _MemoryStore();
     await tester.pumpWidget(
