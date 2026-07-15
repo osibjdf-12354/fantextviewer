@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geulbom/app_store.dart';
 import 'package:geulbom/models.dart';
+import 'package:geulbom/page_index_cache.dart';
 import 'package:geulbom/reader_screen.dart';
 import 'package:geulbom/text_document.dart';
 import 'package:geulbom/text_paginator.dart';
@@ -13,6 +14,50 @@ import 'package:geulbom/text_paginator.dart';
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
 
 void main() {
+  testWidgets('강제 인코딩마다 별도 페이지 캐시를 사용한다', (tester) async {
+    const text = '같은길이본문';
+    final cache = _MemoryPageIndexCache();
+    var paginationCalls = 0;
+    Future<List<TextPage>> paginator({
+      required String text,
+      required Size size,
+      required TextStyle style,
+      ValueChanged<double>? onProgress,
+      PaginationBatchCallback? onBatch,
+      TextLayoutCallback? onLayout,
+      bool Function()? isCancelled,
+    }) async {
+      paginationCalls++;
+      return [TextPage(start: 0, end: text.length)];
+    }
+
+    Future<void> pumpEncoding(TextEncoding encoding) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderView(
+            key: ValueKey(encoding),
+            path: '/book.txt',
+            title: 'book.txt',
+            text: text,
+            encoding: encoding,
+            store: _MemoryStore(),
+            fileSize: 12,
+            modified: DateTime.utc(2026, 7, 15),
+            pageIndexCache: cache,
+            paginator: paginator,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpEncoding(TextEncoding.utf8);
+    await pumpEncoding(TextEncoding.cp949);
+
+    expect(paginationCalls, 2);
+    expect(cache.loadSignatures.toSet(), hasLength(2));
+  });
+
   testWidgets('페이지 계산 완료 전에 저장 위치를 덮는 배치를 표시한다', (tester) async {
     const text = '첫페이지둘째페이지';
     final store = _MemoryStore()
@@ -60,6 +105,69 @@ void main() {
     completion.complete([
       const TextPage(start: 0, end: 4),
       TextPage(start: 4, end: text.length),
+    ]);
+    await tester.pump();
+  });
+
+  testWidgets('나중 배치가 검색 위치를 덮으면 해당 페이지로 이동한다', (tester) async {
+    const text = '첫페이지둘째페이지찾을본문';
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
+    final completion = Completer<List<TextPage>>();
+    PaginationBatchCallback? emitBatch;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                emitBatch = onBatch;
+                onBatch?.call(const [TextPage(start: 0, end: 4)]);
+                return completion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('본문 검색'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '찾을본문');
+    await tester.tap(find.text('검색'));
+    await tester.pumpAndSettle();
+
+    expect(store.document('/book.txt').offset, 9);
+    expect(tester.widget<PageView>(find.byType(PageView)).controller?.page, 0);
+
+    emitBatch?.call([
+      const TextPage(start: 4, end: 9),
+      TextPage(start: 9, end: text.length),
+    ]);
+    await tester.pump();
+    await tester.pump();
+
+    expect(tester.widget<PageView>(find.byType(PageView)).controller?.page, 2);
+    expect(find.text('찾을본문'), findsOneWidget);
+
+    completion.complete([
+      const TextPage(start: 0, end: 4),
+      const TextPage(start: 4, end: 9),
+      TextPage(start: 9, end: text.length),
     ]);
     await tester.pump();
   });
@@ -298,4 +406,27 @@ class _MemoryStore extends AppStore {
 
   @override
   Future<void> save() async {}
+}
+
+class _MemoryPageIndexCache extends PageIndexCache {
+  final records = <String, List<TextPage>>{};
+  final loadSignatures = <String>[];
+
+  @override
+  Future<List<TextPage>?> load({
+    required String signature,
+    required int textLength,
+  }) async {
+    loadSignatures.add(signature);
+    return records[signature];
+  }
+
+  @override
+  Future<void> save({
+    required String signature,
+    required int textLength,
+    required List<TextPage> pages,
+  }) async {
+    records[signature] = pages;
+  }
 }

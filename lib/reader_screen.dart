@@ -201,6 +201,7 @@ class _ReaderViewState extends State<ReaderView> {
   Timer? _saveTimer;
   List<TextPage>? _pages;
   PageController? _pageController;
+  int? _pendingPageOffset;
   String? _paginationKey;
   double _paginationProgress = 0;
   int _paginationGeneration = 0;
@@ -390,6 +391,7 @@ class _ReaderViewState extends State<ReaderView> {
       controller: _pageController,
       itemCount: pages.length,
       onPageChanged: (index) {
+        _pendingPageOffset = null;
         _setOffset(pages[index].start);
       },
       itemBuilder: (context, index) {
@@ -417,6 +419,7 @@ class _ReaderViewState extends State<ReaderView> {
       'fileSize': widget.fileSize,
       'modified': widget.modified?.toUtc().toIso8601String(),
       'textLength': widget.text.length,
+      'encoding': widget.encoding.name,
       'width': size.width,
       'height': size.height,
       'fontSize': _settings.fontSize,
@@ -489,6 +492,24 @@ class _ReaderViewState extends State<ReaderView> {
       _pages = pages;
       _paginationComplete = complete;
     });
+    final pendingOffset = _pendingPageOffset;
+    if (_settings.mode == ReadingMode.page &&
+        pendingOffset != null &&
+        pages.isNotEmpty &&
+        (complete || pendingOffset < pages.last.end)) {
+      final controller = _pageController;
+      final page = pageForOffset(pages, pendingOffset);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _pendingPageOffset != pendingOffset ||
+            !identical(controller, _pageController) ||
+            controller?.hasClients != true) {
+          return;
+        }
+        _pendingPageOffset = null;
+        controller!.jumpToPage(page);
+      });
+    }
     if (complete && _settings.mode == ReadingMode.scroll) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_itemScrollController.isAttached) return;
@@ -510,6 +531,7 @@ class _ReaderViewState extends State<ReaderView> {
     if (index >= (pages?.length ?? _chunks.length)) return;
     final offset = pages == null ? _chunks[index].start : pages[index].start;
     if (offset == _offset) return;
+    _pendingPageOffset = null;
     setState(() => _offset = offset);
     widget.store.updateProgress(
       widget.path,
@@ -547,24 +569,28 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   void _jumpToOffset(int offset) {
+    _pendingPageOffset = null;
     setState(() => _setOffset(offset));
-    if (_settings.mode == ReadingMode.scroll &&
-        _itemScrollController.isAttached) {
+    if (_settings.mode == ReadingMode.scroll) {
       final pages = _completePages;
-      _itemScrollController.jumpTo(
-        index: pages == null
-            ? _chunkForOffset(_offset)
-            : pageForOffset(pages, _offset),
-      );
-    } else {
-      final pages = _pages;
-      if (pages != null &&
-          pages.isNotEmpty &&
-          (_paginationComplete || _offset < pages.last.end) &&
-          _pageController?.hasClients == true) {
-        final page = pageForOffset(pages, _offset);
-        _pageController!.jumpToPage(page);
+      if (_itemScrollController.isAttached) {
+        _itemScrollController.jumpTo(
+          index: pages == null
+              ? _chunkForOffset(_offset)
+              : pageForOffset(pages, _offset),
+        );
       }
+      return;
+    }
+    final pages = _pages;
+    if (pages != null &&
+        pages.isNotEmpty &&
+        (_paginationComplete || _offset < pages.last.end) &&
+        _pageController?.hasClients == true) {
+      final page = pageForOffset(pages, _offset);
+      _pageController!.jumpToPage(page);
+    } else {
+      _pendingPageOffset = _offset;
     }
   }
 
@@ -905,6 +931,7 @@ class _ReaderViewState extends State<ReaderView> {
 
   void _applySettings(ReaderSettings settings) {
     _paginationGeneration++;
+    _pendingPageOffset = null;
     _pageController?.dispose();
     _pageController = null;
     setState(() {
