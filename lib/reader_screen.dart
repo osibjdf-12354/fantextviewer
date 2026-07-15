@@ -202,6 +202,7 @@ class _ReaderViewState extends State<ReaderView> {
   List<TextPage>? _pages;
   PageController? _pageController;
   int? _pendingPageOffset;
+  int? _pendingScrollOffset;
   Size? _pageSize;
   ({List<TextPage> pages, int firstPage})? _pageWindow;
   int _pageWindowGeneration = 0;
@@ -361,18 +362,13 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   Widget _buildScrollReader() {
-    final pages = _completePages;
-    final itemCount = pages?.length ?? _chunks.length;
-    final initialIndex = pages == null
-        ? _chunkForOffset(_offset)
-        : pageForOffset(pages, _offset);
     return Stack(
       children: [
         ScrollablePositionedList.builder(
-          itemCount: itemCount,
+          itemCount: _chunks.length,
           itemScrollController: _itemScrollController,
           itemPositionsListener: _itemPositionsListener,
-          initialScrollIndex: initialIndex,
+          initialScrollIndex: _chunkForOffset(_offset),
           initialAlignment: widget.store
               .document(widget.path)
               .scrollAlignment
@@ -384,10 +380,7 @@ class _ReaderViewState extends State<ReaderView> {
             56,
           ),
           itemBuilder: (context, index) {
-            final text = pages == null
-                ? _chunks[index].text
-                : widget.text.substring(pages[index].start, pages[index].end);
-            return SelectableText(text, style: _textStyle);
+            return SelectableText(_chunks[index].text, style: _textStyle);
           },
         ),
         _buildPageIndicator(),
@@ -419,6 +412,7 @@ class _ReaderViewState extends State<ReaderView> {
           itemCount: pages.length,
           onPageChanged: (index) {
             _pendingPageOffset = null;
+            _pendingScrollOffset = null;
             setState(() {
               _displayPageNumber = window == null
                   ? index + 1
@@ -583,7 +577,7 @@ class _ReaderViewState extends State<ReaderView> {
     if (complete && _settings.mode == ReadingMode.scroll) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted || !_itemScrollController.isAttached) return;
-        _itemScrollController.jumpTo(index: initialPage);
+        _itemScrollController.jumpTo(index: _chunkForOffset(_offset));
       });
     }
   }
@@ -597,9 +591,15 @@ class _ReaderViewState extends State<ReaderView> {
           ..sort((a, b) => a.index.compareTo(b.index));
     if (visible.isEmpty) return;
     final index = visible.first.index;
-    final pages = _completePages;
-    if (index >= (pages?.length ?? _chunks.length)) return;
-    final offset = pages == null ? _chunks[index].start : pages[index].start;
+    if (index >= _chunks.length) return;
+    final pendingScrollOffset = _pendingScrollOffset;
+    if (pendingScrollOffset != null) {
+      if (index == _chunkForOffset(pendingScrollOffset)) {
+        _pendingScrollOffset = null;
+      }
+      return;
+    }
+    final offset = _chunks[index].start;
     if (offset == _offset) return;
     _pendingPageOffset = null;
     setState(() => _offset = offset);
@@ -642,13 +642,9 @@ class _ReaderViewState extends State<ReaderView> {
     _pendingPageOffset = null;
     setState(() => _setOffset(offset));
     if (_settings.mode == ReadingMode.scroll) {
-      final pages = _completePages;
+      _pendingScrollOffset = _offset;
       if (_itemScrollController.isAttached) {
-        _itemScrollController.jumpTo(
-          index: pages == null
-              ? _chunkForOffset(_offset)
-              : pageForOffset(pages, _offset),
-        );
+        _itemScrollController.jumpTo(index: _chunkForOffset(_offset));
       }
       return;
     }
@@ -1098,6 +1094,7 @@ class _ReaderViewState extends State<ReaderView> {
     _paginationGeneration++;
     _pageWindowGeneration++;
     _pendingPageOffset = null;
+    _pendingScrollOffset = null;
     _pageController?.dispose();
     _pageController = null;
     setState(() {

@@ -92,6 +92,39 @@ void main() {
     expect(find.textContaining('%'), findsNothing);
   });
 
+  testWidgets('스크롤 본문은 페이지 계산 뒤에도 페이지 경계에서 줄을 나누지 않는다', (tester) async {
+    const text = '원문에는 줄바꿈이 없는 한 줄 본문입니다';
+    final pages = <TextPage>[
+      for (var start = 0; start < text.length; start += 5)
+        TextPage(start: start, end: math.min(start + 5, text.length)),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: _MemoryStore(),
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async => pages,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(text), findsOneWidget);
+  });
+
   testWidgets('강제 인코딩마다 별도 페이지 캐시를 사용한다', (tester) async {
     const text = '같은길이본문';
     final cache = _MemoryPageIndexCache();
