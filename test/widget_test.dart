@@ -11,7 +11,7 @@ void main() {
 
     await tester.pumpWidget(GeulbomApp(store: store));
 
-    expect(find.text('글봄'), findsOneWidget);
+    expect(find.text('판갤텍뷰'), findsOneWidget);
     expect(find.byIcon(Icons.folder_open), findsWidgets);
     expect(find.text('최근에 읽은 파일이 없습니다.'), findsOneWidget);
   });

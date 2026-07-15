@@ -26,7 +26,7 @@ class GeulbomApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '글봄',
+      title: '판갤텍뷰',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -104,7 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
         final recent = widget.store.recentDocuments;
         return Scaffold(
           appBar: AppBar(
-            title: const Text('글봄'),
+            title: const Text('판갤텍뷰'),
             actions: [
               IconButton(
                 tooltip: '시스템 파일 선택기',
