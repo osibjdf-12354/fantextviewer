@@ -130,4 +130,51 @@ void main() {
     expect(pages.single.end, lessThan(text.length));
     expect(layoutLengths, hasLength(2));
   });
+
+  test('임의 문서의 페이지 수와 위치를 추정한다', () {
+    final pages = List.generate(
+      8,
+      (index) => TextPage(start: index * 250, end: (index + 1) * 250),
+    );
+
+    expect(
+      estimatedPageCount(250000, pages, fallbackCharactersPerPage: 300),
+      1000,
+    );
+    expect(
+      estimatedPageForOffset(125000, textLength: 250000, totalPages: 1000),
+      500,
+    );
+    expect(
+      estimatedOffsetForPage(500, textLength: 250000, totalPages: 1000),
+      inInclusiveRange(124000, 126000),
+    );
+  });
+
+  test('추정 페이지와 위치를 문서 경계로 제한한다', () {
+    expect(estimatedPageForOffset(-1, textLength: 1000, totalPages: 10), 1);
+    expect(estimatedPageForOffset(5000, textLength: 1000, totalPages: 10), 10);
+    expect(estimatedOffsetForPage(0, textLength: 1000, totalPages: 10), 0);
+    expect(estimatedOffsetForPage(99, textLength: 1000, totalPages: 10), 999);
+  });
+
+  test('원문 중간에서 제한된 수의 페이지 구간을 계산한다', () async {
+    final text = List.generate(300, (index) => '줄 $index 가나다라\n').join();
+
+    final pages = await paginateTextWindow(
+      text: text,
+      startOffset: text.length ~/ 2,
+      size: const Size(240, 180),
+      style: const TextStyle(fontSize: 18),
+      maxPages: 12,
+    );
+
+    expect(pages, isNotEmpty);
+    expect(pages.length, lessThanOrEqualTo(12));
+    expect(pages.first.start, greaterThan(0));
+    expect(pages.last.end, lessThanOrEqualTo(text.length));
+    for (var index = 1; index < pages.length; index++) {
+      expect(pages[index - 1].end, pages[index].start);
+    }
+  });
 }
