@@ -76,8 +76,11 @@ Future<List<TextPage>> paginateTextWindow({
 
   var start = startOffset.clamp(0, text.length - 1);
   if (_splitsSurrogatePair(text, start)) start--;
-  final newline = text.lastIndexOf('\n', math.max(0, start - 1));
-  if (newline >= 0 && start - newline <= 4096) start = newline + 1;
+  if (start > 0) {
+    final lowerBound = math.max(0, start - 4096);
+    final newline = text.substring(lowerBound, start).lastIndexOf('\n');
+    if (newline >= 0) start = lowerBound + newline + 1;
+  }
 
   final pages = <TextPage>[];
   var probeLength = 4096;
@@ -133,7 +136,7 @@ int estimatedOffsetForPage(
 }) {
   if (textLength <= 1 || totalPages <= 1) return 0;
   final ratio = (page.clamp(1, totalPages) - 1) / (totalPages - 1);
-  return (ratio * (textLength - 1)).round();
+  return (ratio * (textLength - 1)).ceil();
 }
 
 int pageForOffset(List<TextPage> pages, int offset) {

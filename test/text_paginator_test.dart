@@ -158,6 +158,22 @@ void main() {
     expect(estimatedOffsetForPage(99, textLength: 1000, totalPages: 10), 999);
   });
 
+  test('estimated page offsets round-trip to every requested page', () {
+    for (var page = 1; page <= 333; page++) {
+      final offset = estimatedOffsetForPage(
+        page,
+        textLength: 1000,
+        totalPages: 333,
+      );
+
+      expect(
+        estimatedPageForOffset(offset, textLength: 1000, totalPages: 333),
+        page,
+        reason: 'page $page mapped through offset $offset',
+      );
+    }
+  });
+
   test('원문 중간에서 제한된 수의 페이지 구간을 계산한다', () async {
     final text = List.generate(300, (index) => '줄 $index 가나다라\n').join();
 
@@ -177,4 +193,42 @@ void main() {
       expect(pages[index - 1].end, pages[index].start);
     }
   });
+
+  test(
+    'window pagination preserves a leading newline at offset zero',
+    () async {
+      final pages = await paginateTextWindow(
+        text: '\nfirst line\nsecond line',
+        startOffset: 0,
+        size: const Size(240, 180),
+        style: const TextStyle(fontSize: 18),
+      );
+
+      expect(pages.first.start, 0);
+    },
+  );
+
+  test(
+    'window pagination aligns only within the previous 4096 chars',
+    () async {
+      final text = 'outside\n${List.filled(4100, 'x').join()}\ninside';
+      final insideNewline = text.lastIndexOf('\n');
+
+      final nearbyPages = await paginateTextWindow(
+        text: text,
+        startOffset: text.length - 2,
+        size: const Size(240, 180),
+        style: const TextStyle(fontSize: 18),
+      );
+      final distantPages = await paginateTextWindow(
+        text: text,
+        startOffset: insideNewline - 1,
+        size: const Size(240, 180),
+        style: const TextStyle(fontSize: 18),
+      );
+
+      expect(nearbyPages.first.start, insideNewline + 1);
+      expect(distantPages.first.start, insideNewline - 1);
+    },
+  );
 }
