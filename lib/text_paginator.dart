@@ -2,6 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+typedef PaginationBatchCallback = void Function(List<TextPage> pages);
+typedef TextLayoutCallback = void Function(int characterCount);
+
 class TextPage {
   const TextPage({required this.start, required this.end});
 
@@ -14,6 +17,8 @@ Future<List<TextPage>> paginateText({
   required Size size,
   required TextStyle style,
   ValueChanged<double>? onProgress,
+  PaginationBatchCallback? onBatch,
+  TextLayoutCallback? onLayout,
   bool Function()? isCancelled,
 }) async {
   if (text.isEmpty) return const [];
@@ -23,15 +28,24 @@ Future<List<TextPage>> paginateText({
 
   final pages = <TextPage>[];
   var start = 0;
+  var batchStart = 0;
+  var probeLength = 4096;
   while (start < text.length) {
     if (isCancelled?.call() == true) break;
-    final end = _nextPageEnd(text, start, size, style);
+    final end = _nextPageEnd(text, start, size, style, probeLength, onLayout);
     pages.add(TextPage(start: start, end: end));
+    probeLength = end - start;
     start = end;
-    onProgress?.call(start / text.length);
-    if (pages.length % 25 == 0) {
+    if (pages.length - batchStart == 8) {
+      onBatch?.call(pages.sublist(batchStart));
+      batchStart = pages.length;
+      onProgress?.call(start / text.length);
       await Future<void>.delayed(Duration.zero);
     }
+  }
+  if (batchStart < pages.length) {
+    onBatch?.call(pages.sublist(batchStart));
+    onProgress?.call(start / text.length);
   }
   return pages;
 }
@@ -56,14 +70,26 @@ int pageForOffset(List<TextPage> pages, int offset) {
   return low.clamp(0, pages.length - 1);
 }
 
-int _nextPageEnd(String text, int start, Size size, TextStyle style) {
-  var candidateEnd = math.min(start + 4096, text.length);
+int _nextPageEnd(
+  String text,
+  int start,
+  Size size,
+  TextStyle style,
+  int probeLength,
+  TextLayoutCallback? onLayout,
+) {
+  var candidateEnd = math.min(start + probeLength, text.length);
   late TextPainter painter;
   while (true) {
-    painter = _layout(text.substring(start, candidateEnd), size.width, style);
+    painter = _layout(
+      text.substring(start, candidateEnd),
+      size.width,
+      style,
+      onLayout,
+    );
     if (painter.height > size.height || candidateEnd == text.length) break;
     painter.dispose();
-    candidateEnd = math.min(candidateEnd + 4096, text.length);
+    candidateEnd = math.min(candidateEnd + probeLength, text.length);
   }
 
   if (painter.height <= size.height) {
@@ -84,7 +110,13 @@ int _nextPageEnd(String text, int start, Size size, TextStyle style) {
   return end.clamp(start + 1, text.length);
 }
 
-TextPainter _layout(String text, double width, TextStyle style) {
+TextPainter _layout(
+  String text,
+  double width,
+  TextStyle style,
+  TextLayoutCallback? onLayout,
+) {
+  onLayout?.call(text.length);
   return TextPainter(
     text: TextSpan(text: text, style: style),
     textDirection: TextDirection.ltr,

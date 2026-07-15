@@ -47,17 +47,49 @@ void main() {
 
   test('페이지 계산 취소 요청이 오면 남은 본문 계산을 멈춘다', () async {
     final text = List.filled(1000, '가나다라마바사아자차카타파하 ').join();
-    var calculatedPages = 0;
+    var cancellationChecks = 0;
 
     final pages = await paginateText(
       text: text,
       size: const Size(160, 120),
       style: const TextStyle(fontSize: 20, height: 1.5),
-      onProgress: (_) => calculatedPages++,
-      isCancelled: () => calculatedPages >= 3,
+      isCancelled: () => cancellationChecks++ >= 3,
     );
 
     expect(pages, hasLength(3));
     expect(pages.last.end, lessThan(text.length));
+  });
+
+  test('emits new pages in eight-page batches', () async {
+    final batches = <List<TextPage>>[];
+
+    final pages = await paginateText(
+      text: List.filled(80, 'batch pagination text ').join(),
+      size: const Size(160, 120),
+      style: const TextStyle(fontSize: 20, height: 1.5),
+      onBatch: batches.add,
+    );
+
+    expect(batches.length, greaterThan(1));
+    for (final batch in batches.take(batches.length - 1)) {
+      expect(batch, hasLength(8));
+    }
+    expect(batches.last, hasLength(inInclusiveRange(1, 8)));
+    expect(batches.expand((batch) => batch), orderedEquals(pages));
+  });
+
+  test('uses smaller layout probes after the first page', () async {
+    final layoutLengths = <int>[];
+
+    await paginateText(
+      text: List.filled(400, 'adaptive pagination text ').join(),
+      size: const Size(240, 320),
+      style: const TextStyle(fontSize: 20, height: 1.5),
+      onLayout: layoutLengths.add,
+    );
+
+    expect(layoutLengths.first, 4096);
+    expect(layoutLengths.skip(1), isNotEmpty);
+    expect(layoutLengths.skip(1), everyElement(lessThan(2048)));
   });
 }
