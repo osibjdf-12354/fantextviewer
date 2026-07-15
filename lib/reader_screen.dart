@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
@@ -220,6 +221,7 @@ class _ReaderViewState extends State<ReaderView> {
     return Scaffold(
       backgroundColor: background,
       appBar: AppBar(
+        toolbarHeight: 48,
         backgroundColor: background,
         foregroundColor: foreground,
         title: Text(widget.title),
@@ -236,9 +238,21 @@ class _ReaderViewState extends State<ReaderView> {
           ? Center(
               child: Text('빈 파일입니다.', style: TextStyle(color: foreground)),
             )
-          : _settings.mode == ReadingMode.scroll
-          ? _buildScrollReader()
-          : _buildPageReader(),
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                final pageSize = Size(
+                  math.max(
+                    1,
+                    constraints.maxWidth - _settings.horizontalPadding * 2,
+                  ),
+                  math.max(1, constraints.maxHeight),
+                );
+                _ensurePages(pageSize);
+                return _settings.mode == ReadingMode.scroll
+                    ? _buildScrollReader()
+                    : _buildPageReader();
+              },
+            ),
     );
   }
 
@@ -258,6 +272,7 @@ class _ReaderViewState extends State<ReaderView> {
             _drawerItem(Icons.bookmarks_outlined, '북마크', _showBookmarks),
             _drawerItem(Icons.tune, '표시 설정', _showSettings),
             _drawerItem(Icons.info_outline, '파일 정보', _showFileInfo),
+            _drawerItem(Icons.exit_to_app, '앱 종료', () => SystemNavigator.pop()),
           ],
         ),
       ),
@@ -281,11 +296,15 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   Widget _buildScrollReader() {
-    final initialIndex = _chunkForOffset(_offset);
+    final pages = _pages;
+    final itemCount = pages?.length ?? _chunks.length;
+    final initialIndex = pages == null
+        ? _chunkForOffset(_offset)
+        : pageForOffset(pages, _offset);
     return Stack(
       children: [
         ScrollablePositionedList.builder(
-          itemCount: _chunks.length,
+          itemCount: itemCount,
           itemScrollController: _itemScrollController,
           itemPositionsListener: _itemPositionsListener,
           initialScrollIndex: initialIndex,
@@ -299,8 +318,12 @@ class _ReaderViewState extends State<ReaderView> {
             _settings.horizontalPadding,
             56,
           ),
-          itemBuilder: (context, index) =>
-              SelectableText(_chunks[index].text, style: _textStyle),
+          itemBuilder: (context, index) {
+            final text = pages == null
+                ? _chunks[index].text
+                : widget.text.substring(pages[index].start, pages[index].end);
+            return SelectableText(text, style: _textStyle);
+          },
         ),
         Positioned(
           right: 12,
@@ -324,83 +347,41 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   Widget _buildPageReader() {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final pageSize = Size(
-          math.max(1, constraints.maxWidth - _settings.horizontalPadding * 2),
-          math.max(1, constraints.maxHeight - 56),
-        );
-        _ensurePages(pageSize);
-        final pages = _pages;
-        if (pages == null) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircularProgressIndicator(
-                  value: _paginationProgress == 0 ? null : _paginationProgress,
-                ),
-                const SizedBox(height: 12),
-                const Text('페이지를 계산하고 있습니다.'),
-              ],
-            ),
-          );
-        }
-        return Column(
+    final pages = _pages;
+    if (pages == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Expanded(
-              child: PageView.builder(
-                controller: _pageController,
-                itemCount: pages.length,
-                onPageChanged: (index) {
-                  setState(() => _currentPage = index);
-                  _setOffset(pages[index].start);
-                },
-                itemBuilder: (context, index) {
-                  final page = pages[index];
-                  return Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: _settings.horizontalPadding,
-                    ),
-                    child: Align(
-                      alignment: Alignment.topLeft,
-                      child: SelectableText(
-                        widget.text.substring(page.start, page.end),
-                        style: _textStyle,
-                      ),
-                    ),
-                  );
-                },
-              ),
+            CircularProgressIndicator(
+              value: _paginationProgress == 0 ? null : _paginationProgress,
             ),
-            SizedBox(
-              height: 56,
-              child: Row(
-                children: [
-                  const SizedBox(width: 12),
-                  Text(
-                    '${_currentPage + 1} / ${pages.length}',
-                    style: TextStyle(color: Color(_settings.foreground.value)),
-                  ),
-                  Expanded(
-                    child: pages.length == 1
-                        ? const SizedBox.shrink()
-                        : Slider(
-                            min: 1,
-                            max: pages.length.toDouble(),
-                            divisions: pages.length - 1,
-                            value: (_currentPage + 1).toDouble(),
-                            onChanged: (value) {
-                              final index = value.round() - 1;
-                              setState(() => _currentPage = index);
-                              _pageController?.jumpToPage(index);
-                            },
-                          ),
-                  ),
-                ],
-              ),
-            ),
+            const SizedBox(height: 12),
+            const Text('페이지를 계산하고 있습니다.'),
           ],
+        ),
+      );
+    }
+    return PageView.builder(
+      controller: _pageController,
+      itemCount: pages.length,
+      onPageChanged: (index) {
+        setState(() => _currentPage = index);
+        _setOffset(pages[index].start);
+      },
+      itemBuilder: (context, index) {
+        final page = pages[index];
+        return Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: _settings.horizontalPadding,
+          ),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SelectableText(
+              widget.text.substring(page.start, page.end),
+              style: _textStyle,
+            ),
+          ),
         );
       },
     );
@@ -434,6 +415,12 @@ class _ReaderViewState extends State<ReaderView> {
         _pages = pages;
         _currentPage = initialPage;
       });
+      if (_settings.mode == ReadingMode.scroll) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || !_itemScrollController.isAttached) return;
+          _itemScrollController.jumpTo(index: initialPage);
+        });
+      }
     });
   }
 
@@ -445,9 +432,12 @@ class _ReaderViewState extends State<ReaderView> {
             .toList()
           ..sort((a, b) => a.index.compareTo(b.index));
     if (visible.isEmpty) return;
-    final chunk = _chunks[visible.first.index];
-    if (chunk.start == _offset) return;
-    setState(() => _offset = chunk.start);
+    final index = visible.first.index;
+    final pages = _pages;
+    if (index >= (pages?.length ?? _chunks.length)) return;
+    final offset = pages == null ? _chunks[index].start : pages[index].start;
+    if (offset == _offset) return;
+    setState(() => _offset = offset);
     widget.store.updateProgress(
       widget.path,
       offset: _offset,
@@ -487,7 +477,12 @@ class _ReaderViewState extends State<ReaderView> {
     setState(() => _setOffset(offset));
     if (_settings.mode == ReadingMode.scroll &&
         _itemScrollController.isAttached) {
-      _itemScrollController.jumpTo(index: _chunkForOffset(_offset));
+      final pages = _pages;
+      _itemScrollController.jumpTo(
+        index: pages == null
+            ? _chunkForOffset(_offset)
+            : pageForOffset(pages, _offset),
+      );
     } else {
       final pages = _pages;
       if (pages != null && _pageController?.hasClients == true) {
@@ -507,6 +502,11 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   void _addBookmark() {
+    final page = _pageNumberForOffset(_offset);
+    if (page == null) {
+      _showMessage('페이지를 계산하고 있습니다.');
+      return;
+    }
     final start = math.max(0, _offset - 20);
     final end = math.min(widget.text.length, _offset + 40);
     final excerpt = widget.text
@@ -522,24 +522,27 @@ class _ReaderViewState extends State<ReaderView> {
       ),
     );
     _scheduleSave();
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('북마크를 저장했습니다.')));
+    _showMessage('$page페이지에 북마크를 저장했습니다.');
   }
 
   Future<void> _showGoToDialog() async {
-    final controller = TextEditingController();
+    final pages = _pages;
+    if (pages == null) {
+      _showMessage('페이지를 계산하고 있습니다.');
+      return;
+    }
+    var value = '';
     final input = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('위치 이동'),
         content: TextField(
-          controller: controller,
           autofocus: true,
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: '페이지 또는 퍼센트',
-            hintText: '25 또는 50%',
+          onChanged: (next) => value = next,
+          decoration: InputDecoration(
+            labelText: '페이지',
+            hintText: '1~${pages.length}',
           ),
         ),
         actions: [
@@ -548,52 +551,40 @@ class _ReaderViewState extends State<ReaderView> {
             child: const Text('취소'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            onPressed: () => Navigator.pop(dialogContext, value),
             child: const Text('이동'),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (input == null || !mounted) return;
-    final trimmed = input.trim();
-    if (trimmed.endsWith('%')) {
-      final percent = double.tryParse(trimmed.substring(0, trimmed.length - 1));
-      if (percent != null && percent >= 0 && percent <= 100) {
-        _jumpToOffset((widget.text.length * percent / 100).round());
-        return;
-      }
-    } else {
-      final page = int.tryParse(trimmed);
-      final pages = _pages;
-      if (page != null && pages != null && page >= 1 && page <= pages.length) {
-        _jumpToOffset(pages[page - 1].start);
-        return;
-      }
+    final page = int.tryParse(input.trim());
+    if (page == null || page < 1 || page > pages.length) {
+      _showMessage('1~${pages.length} 사이 페이지를 입력해 주세요.');
+      return;
     }
-    _showMessage('이동할 위치를 확인해 주세요. 페이지 이동은 페이지 계산 후 사용할 수 있습니다.');
+    _jumpToOffset(pages[page - 1].start);
   }
 
   Future<void> _showSearchDialog() async {
-    final controller = TextEditingController();
+    var value = '';
     final query = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('본문 검색'),
-        content: TextField(controller: controller, autofocus: true),
+        content: TextField(autofocus: true, onChanged: (next) => value = next),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
             child: const Text('취소'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            onPressed: () => Navigator.pop(dialogContext, value),
             child: const Text('검색'),
           ),
         ],
       ),
     );
-    controller.dispose();
     if (query == null || query.isEmpty || !mounted) return;
     var found = widget.text.indexOf(
       query,
@@ -608,6 +599,10 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   Future<void> _showBookmarks() async {
+    if (_pages == null) {
+      _showMessage('페이지를 계산하고 있습니다.');
+      return;
+    }
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -630,9 +625,7 @@ class _ReaderViewState extends State<ReaderView> {
                   title: Text(
                     bookmark.excerpt.isEmpty ? '빈 줄' : bookmark.excerpt,
                   ),
-                  subtitle: Text(
-                    '${(bookmark.offset / math.max(1, widget.text.length) * 100).toStringAsFixed(1)}%',
-                  ),
+                  subtitle: Text('${_pageNumberForOffset(bookmark.offset)}페이지'),
                   onTap: () {
                     Navigator.pop(sheetContext);
                     _jumpToOffset(bookmark.offset);
@@ -859,6 +852,12 @@ class _ReaderViewState extends State<ReaderView> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  int? _pageNumberForOffset(int offset) {
+    final pages = _pages;
+    if (pages == null || pages.isEmpty) return null;
+    return pageForOffset(pages, offset) + 1;
   }
 }
 
