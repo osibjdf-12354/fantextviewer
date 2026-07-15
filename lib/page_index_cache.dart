@@ -85,6 +85,7 @@ class PageIndexCache {
         records.add((entity, await entity.lastModified()));
       }
     }
+    if (records.length <= 8) return;
     records.sort((a, b) {
       final modified = a.$2.compareTo(b.$2);
       return modified != 0 ? modified : a.$1.path.compareTo(b.$1.path);

@@ -79,6 +79,18 @@ void main() {
     }
   });
 
+  test('returns null instead of throwing for malformed JSON', () async {
+    await cache.save(
+      signature: 'book-a',
+      textLength: 9,
+      pages: const [TextPage(start: 0, end: 9)],
+    );
+    final file = directory.listSync().whereType<File>().single;
+    await file.writeAsString('{broken');
+
+    expect(await cache.load(signature: 'book-a', textLength: 9), isNull);
+  });
+
   test('retains at most eight records and keeps the latest save', () async {
     for (var index = 0; index < 9; index++) {
       await cache.save(
