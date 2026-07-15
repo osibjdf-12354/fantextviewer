@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -54,11 +54,12 @@ Future<List<BrowserEntry>> listTextEntries(
 }
 
 Future<String?> pickTextFile() async {
-  final result = await FilePicker.platform.pickFiles(
-    type: FileType.custom,
-    allowedExtensions: const ['txt'],
+  const textFiles = XTypeGroup(
+    label: '텍스트 파일',
+    extensions: ['txt'],
+    mimeTypes: ['text/plain'],
   );
-  return result?.files.single.path;
+  return (await openFile(acceptedTypeGroups: const [textFiles]))?.path;
 }
 
 class FileBrowserScreen extends StatefulWidget {

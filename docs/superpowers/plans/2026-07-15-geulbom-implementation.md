@@ -6,7 +6,7 @@
 
 **Architecture:** Flutter 기본 `ChangeNotifier` 상태와 화면 세 개(홈, 파일 탐색기, 읽기)를 사용한다. 텍스트 디코딩·분할·페이지 계산은 UI 밖의 작은 함수로 두고, 설정과 문서별 상태는 앱 지원 디렉터리의 JSON 파일 하나에 저장한다.
 
-**Tech Stack:** Flutter 3.44.6, Dart 3.12.2, Android API 24+, `permission_handler`, `file_picker`, `charset_converter`, `path_provider`, `scrollable_positioned_list`, `wakelock_plus`
+**Tech Stack:** Flutter 3.44.6, Dart 3.12.2, Android API 24+, `permission_handler`, `file_selector`, `charset_converter`, `path_provider`, `scrollable_positioned_list`, `wakelock_plus`
 
 ## Global Constraints
 
@@ -61,7 +61,7 @@ Expected: project generation succeeds without deleting `docs/`.
 Run:
 
 ```powershell
-flutter pub add permission_handler file_picker charset_converter path_provider scrollable_positioned_list wakelock_plus
+flutter pub add permission_handler file_selector charset_converter path_provider scrollable_positioned_list wakelock_plus
 ```
 
 Expected: dependency resolution succeeds on Flutter 3.44.6.
@@ -470,7 +470,7 @@ Future<List<BrowserEntry>> listTextEntries(Directory directory, BrowserSort sort
 }
 ```
 
-Add `Future<String?> pickTextFile()` using `FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: ['txt'])`. Add `FileBrowserScreen` that starts at `/storage/emulated/0`, displays breadcrumb/current path, search and sort actions, enters directories, opens a selected file through `ValueChanged<String> onOpenFile`, and shows Korean empty/error states. Before direct browsing, accept either `Permission.manageExternalStorage.isGranted` or `Permission.storage.isGranted`; request both paths as applicable and expose the system picker when denied.
+Add `Future<String?> pickTextFile()` using `file_selector.openFile` with a TXT `XTypeGroup`. Add `FileBrowserScreen` that starts at `/storage/emulated/0`, displays breadcrumb/current path, search and sort actions, enters directories, opens a selected file through `ValueChanged<String> onOpenFile`, and shows Korean empty/error states. Before direct browsing, accept either `Permission.manageExternalStorage.isGranted` or `Permission.storage.isGranted`; request both paths as applicable and expose the system picker when denied.
 
 - [ ] **Step 4: Verify GREEN and commit**
 

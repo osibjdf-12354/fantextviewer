@@ -1,17 +1,34 @@
-# geulbom
+# 글봄
 
-A new Flutter project.
+Android용 로컬 TXT 뷰어입니다. 세로 스크롤과 화면 단위 페이지 넘김, 읽던 위치 자동 저장, 북마크, 본문 검색, 페이지·퍼센트 이동을 지원합니다.
 
-## Getting Started
+한글 파일은 UTF-8, UTF-16 LE/BE, CP949/EUC-KR을 자동 판별하며 파일별로 인코딩을 직접 바꿀 수 있습니다. 배경색과 글자색은 RGB 값을 직접 입력하거나 기본 연두, 종이, 밤, 세피아 템플릿에서 고를 수 있습니다. 최초 배경색은 RGB(196, 236, 187)입니다.
 
-This project is a starting point for a Flutter application.
+## 개발 환경
 
-A few resources to get you started if this is your first Flutter project:
+- Flutter 3.44.6 이상
+- Dart 3.12.2 이상
+- Android API 24 이상
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+```powershell
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --release
+```
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+생성된 개인 설치용 APK:
+
+```text
+build/app/outputs/flutter-apk/app-release.apk
+```
+
+## 저장소 권한
+
+앱 안에서 폴더를 탐색하려면 최초 실행 후 Android의 `모든 파일에 대한 접근` 화면에서 글봄을 허용합니다. 권한을 허용하지 않아도 상단의 시스템 파일 선택기로 TXT 파일 하나를 열 수 있습니다.
+
+## 개인정보
+
+파일 내용, 읽기 위치, 북마크와 설정은 기기 안에만 저장됩니다. 앱은 네트워크 권한을 요청하지 않으며 파일을 외부로 전송하지 않습니다.
+
+릴리스 빌드는 개인 설치를 위해 로컬 디버그 키로 서명합니다. Play 배포나 장기 업데이트 서명이 필요할 때만 별도 릴리스 키를 구성하면 됩니다.

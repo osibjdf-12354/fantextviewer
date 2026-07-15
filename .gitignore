@@ -13,6 +13,7 @@
 /coverage/
 
 # Android build outputs
+/android/build/
 /android/app/debug/
 /android/app/profile/
 /android/app/release/
