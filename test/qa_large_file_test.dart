@@ -43,7 +43,8 @@ void main() {
     await tester.pump();
 
     expect(find.text('large.txt'), findsOneWidget);
-    expect(find.textContaining('%'), findsWidgets);
+    expect(find.textContaining(RegExp(r'^\d+페이지$')), findsWidgets);
+    expect(find.textContaining('%'), findsNothing);
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());
