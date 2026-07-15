@@ -11,6 +11,7 @@ import 'package:geulbom/page_index_cache.dart';
 import 'package:geulbom/reader_screen.dart';
 import 'package:geulbom/text_document.dart';
 import 'package:geulbom/text_paginator.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
 
@@ -74,6 +75,11 @@ void main() {
     await tester.pump();
     await tester.pump();
 
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('취소'));
+    await tester.pumpAndSettle();
+
     expect(store.document('/book.txt').offset, selectedOffset);
   });
 
@@ -90,6 +96,150 @@ void main() {
 
     expect(find.textContaining(RegExp(r'^현재 \d+페이지$')), findsOneWidget);
     expect(find.textContaining('%'), findsNothing);
+  });
+
+  testWidgets('정확한 페이지 계산이 끝나면 추정값 대신 정확한 총 페이지 수를 쓴다', (tester) async {
+    final text = List.filled(1000, '가').join();
+    const pages = [
+      TextPage(start: 0, end: 333),
+      TextPage(start: 333, end: 666),
+      TextPage(start: 666, end: 1000),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: _MemoryStore(),
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async => pages,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+
+    final field = tester.widget<TextField>(find.byType(TextField));
+    expect(field.decoration?.hintText, '1~3');
+  });
+
+  testWidgets('이동창을 연 뒤 계산이 끝나면 최신 페이지 범위를 다시 확인한다', (tester) async {
+    final text = List.filled(1000, '가').join();
+    const exactPages = [
+      TextPage(start: 0, end: 333),
+      TextPage(start: 333, end: 666),
+      TextPage(start: 666, end: 1000),
+    ];
+    final completion = Completer<List<TextPage>>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: _MemoryStore(),
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                onBatch?.call(const [TextPage(start: 0, end: 250)]);
+                return completion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).decoration?.hintText,
+      '1~4',
+    );
+
+    completion.complete(exactPages);
+    await tester.pump();
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), '4');
+    await tester.tap(find.text('이동'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1~3 사이 페이지를 입력해 주세요.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('계산이 끝나지 않아도 이미 색인된 페이지는 정확한 위치로 이동한다', (tester) async {
+    final text = List.filled(1000, '가').join();
+    const indexedPrefix = [
+      TextPage(start: 0, end: 100),
+      TextPage(start: 100, end: 200),
+      TextPage(start: 200, end: 300),
+    ];
+    final completion = Completer<List<TextPage>>();
+    final store = _MemoryStore();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                onBatch?.call(indexedPrefix);
+                return completion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '2');
+    await tester.tap(find.text('이동'));
+    await tester.pump();
+
+    expect(store.document('/book.txt').offset, 100);
+
+    completion.complete(indexedPrefix);
+    await tester.pump();
   });
 
   testWidgets('스크롤 본문은 페이지 계산 뒤에도 페이지 경계에서 줄을 나누지 않는다', (tester) async {
@@ -286,7 +436,7 @@ void main() {
     expect(find.text(text.substring(text.length - 1)), findsOneWidget);
   });
 
-  testWidgets('나중 배치가 검색 위치를 덮으면 해당 페이지로 이동한다', (tester) async {
+  testWidgets('계산 중에도 먼 검색 결과를 즉시 표시한다', (tester) async {
     const text = '첫페이지둘째페이지찾을본문';
     final store = _MemoryStore()
       ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
@@ -329,24 +479,87 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(store.document('/book.txt').offset, 9);
-    expect(tester.widget<PageView>(find.byType(PageView)).controller?.page, 0);
+    expect(find.textContaining('찾을본문'), findsWidgets);
+    expect(completion.isCompleted, isFalse);
 
     emitBatch?.call([
       const TextPage(start: 4, end: 9),
       TextPage(start: 9, end: text.length),
     ]);
-    await tester.pump();
-    await tester.pump();
+    await tester.pumpAndSettle();
 
-    expect(tester.widget<PageView>(find.byType(PageView)).controller?.page, 2);
-    expect(find.text('찾을본문'), findsOneWidget);
+    expect(find.textContaining('찾을본문'), findsWidgets);
 
     completion.complete([
       const TextPage(start: 0, end: 4),
       const TextPage(start: 4, end: 9),
       TextPage(start: 9, end: text.length),
     ]);
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('찾을본문'), findsWidgets);
+  });
+
+  testWidgets('계산 중에도 먼 북마크를 즉시 표시한다', (tester) async {
+    const text = '첫페이지둘째페이지찾을본문';
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page))
+      ..addBookmark(
+        '/book.txt',
+        const Bookmark(
+          offset: 9,
+          excerpt: '찾을본문',
+          createdAt: '2026-07-15T00:00:00Z',
+        ),
+      );
+    final completion = Completer<List<TextPage>>();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                onBatch?.call(const [TextPage(start: 0, end: 4)]);
+                return completion.future;
+              },
+        ),
+      ),
+    );
     await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('북마크'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('찾을본문'));
+    await tester.pumpAndSettle();
+
+    expect(store.document('/book.txt').offset, 9);
+    expect(find.textContaining('찾을본문'), findsWidgets);
+    expect(completion.isCompleted, isFalse);
+
+    completion.complete([
+      const TextPage(start: 0, end: 4),
+      const TextPage(start: 4, end: 9),
+      TextPage(start: 9, end: text.length),
+    ]);
+    await tester.pumpAndSettle();
+
+    expect(tester.widget<PageView>(find.byType(PageView)).controller?.page, 2);
+    expect(find.text('찾을본문'), findsOneWidget);
   });
 
   testWidgets('햄버거 메뉴에서 읽기 모드와 RGB 배경색을 바꾼다', (tester) async {
@@ -412,11 +625,24 @@ void main() {
     final field = tester.widget<TextField>(find.byType(TextField));
     expect(field.decoration?.labelText, '페이지');
     expect(find.textContaining('퍼센트'), findsNothing);
-    await tester.enterText(find.byType(TextField), '2');
+    final totalPages = int.parse(field.decoration!.hintText!.substring(2));
+    await tester.enterText(find.byType(TextField), '$totalPages');
     await tester.tap(find.text('이동'));
     await tester.pumpAndSettle();
 
-    expect(store.document('/book.txt').offset, greaterThan(0));
+    final jumpedOffset = store.document('/book.txt').offset;
+    expect(jumpedOffset, greaterThan(0));
+
+    for (var i = 0; i < 3; i++) {
+      await tester.drag(
+        find.byType(ScrollablePositionedList),
+        const Offset(0, 400),
+      );
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+
+    expect(store.document('/book.txt').offset, lessThan(jumpedOffset));
   });
 
   testWidgets('퍼센트와 범위 밖 페이지를 거부한다', (tester) async {
