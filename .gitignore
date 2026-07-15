@@ -1,1 +1,18 @@
 .worktrees/
+
+# IDE
+*.iml
+.idea/
+
+# Dart and Flutter
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Android build outputs
+/android/app/debug/
+/android/app/profile/
+/android/app/release/
