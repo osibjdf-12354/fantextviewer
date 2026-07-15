@@ -45,6 +45,9 @@ void main() {
     expect(find.text('large.txt'), findsOneWidget);
     expect(find.textContaining('%'), findsWidgets);
     expect(tester.takeException(), isNull);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
   });
 }
 
