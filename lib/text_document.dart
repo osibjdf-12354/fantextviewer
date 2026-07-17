@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:charset_converter/charset_converter.dart';
+import 'package:flutter/services.dart';
 
 enum TextEncoding { utf8, utf16le, utf16be, cp949 }
 
@@ -27,15 +30,8 @@ class TextChunk {
 }
 
 TextEncoding detectTextEncoding(Uint8List bytes) {
-  if (_startsWith(bytes, const [0xef, 0xbb, 0xbf])) {
-    return TextEncoding.utf8;
-  }
-  if (_startsWith(bytes, const [0xff, 0xfe])) {
-    return TextEncoding.utf16le;
-  }
-  if (_startsWith(bytes, const [0xfe, 0xff])) {
-    return TextEncoding.utf16be;
-  }
+  final bomEncoding = _bomEncoding(bytes);
+  if (bomEncoding != null) return bomEncoding;
   try {
     utf8.decode(bytes, allowMalformed: false);
     return TextEncoding.utf8;
@@ -49,21 +45,95 @@ Future<DecodedText> decodeText(
   TextEncoding? forced,
   Future<String> Function(Uint8List)? cp949Decoder,
 }) async {
-  final encoding = forced ?? detectTextEncoding(bytes);
-  final value = switch (encoding) {
+  var encoding = forced ?? _bomEncoding(bytes);
+  String value;
+  if (encoding == null) {
+    try {
+      value = utf8.decode(bytes, allowMalformed: false);
+      encoding = TextEncoding.utf8;
+    } on FormatException {
+      encoding = TextEncoding.cp949;
+      value = await (cp949Decoder ?? _decodeCp949)(bytes);
+    }
+  } else {
+    value = await _decodeBytes(bytes, encoding, cp949Decoder);
+  }
+  return DecodedText(_normalizeLineEndings(value), encoding);
+}
+
+Future<DecodedText> loadTextFile(String path, {TextEncoding? forced}) async {
+  final rootToken = ServicesBinding.rootIsolateToken;
+  return Isolate.run(
+    () => _loadTextFileInBackground(path, forced, rootToken),
+    debugName: 'load text file',
+  );
+}
+
+Future<DecodedText> _loadTextFileInBackground(
+  String path,
+  TextEncoding? forced,
+  RootIsolateToken? rootToken,
+) async {
+  if (rootToken != null) {
+    BackgroundIsolateBinaryMessenger.ensureInitialized(rootToken);
+  }
+  final file = File(path);
+  final reader = await file.open();
+  late final Uint8List prefix;
+  try {
+    prefix = await reader.read(3);
+  } finally {
+    await reader.close();
+  }
+  final bomEncoding = _bomEncoding(prefix);
+  final encoding = forced ?? bomEncoding;
+  if (encoding == null || encoding == TextEncoding.utf8) {
+    try {
+      final start = bomEncoding == TextEncoding.utf8 ? 3 : 0;
+      final value = await file.openRead(start).transform(utf8.decoder).join();
+      return DecodedText(_normalizeLineEndings(value), TextEncoding.utf8);
+    } on FormatException {
+      if (encoding == TextEncoding.utf8) rethrow;
+    }
+  }
+  final bytes = await file.readAsBytes();
+  return decodeText(bytes, forced: encoding ?? TextEncoding.cp949);
+}
+
+Future<String> _decodeBytes(
+  Uint8List bytes,
+  TextEncoding encoding,
+  Future<String> Function(Uint8List)? cp949Decoder,
+) async {
+  return switch (encoding) {
     TextEncoding.utf8 => utf8.decode(
-      bytes.sublist(_startsWith(bytes, const [0xef, 0xbb, 0xbf]) ? 3 : 0),
+      Uint8List.sublistView(
+        bytes,
+        _startsWith(bytes, const [0xef, 0xbb, 0xbf]) ? 3 : 0,
+      ),
       allowMalformed: false,
     ),
     TextEncoding.utf16le => _decodeUtf16(bytes, Endian.little),
     TextEncoding.utf16be => _decodeUtf16(bytes, Endian.big),
     TextEncoding.cp949 => await (cp949Decoder ?? _decodeCp949)(bytes),
   };
-  return DecodedText(
-    value.replaceAll('\r\n', '\n').replaceAll('\r', '\n'),
-    encoding,
-  );
 }
+
+TextEncoding? _bomEncoding(Uint8List bytes) {
+  if (_startsWith(bytes, const [0xef, 0xbb, 0xbf])) {
+    return TextEncoding.utf8;
+  }
+  if (_startsWith(bytes, const [0xff, 0xfe])) {
+    return TextEncoding.utf16le;
+  }
+  if (_startsWith(bytes, const [0xfe, 0xff])) {
+    return TextEncoding.utf16be;
+  }
+  return null;
+}
+
+String _normalizeLineEndings(String value) =>
+    value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
 List<TextChunk> splitText(String text, {int maxChars = 1200}) {
   if (text.isEmpty) return const [];

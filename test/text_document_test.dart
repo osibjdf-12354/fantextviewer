@@ -1,10 +1,34 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geulbom/text_document.dart';
 
 void main() {
+  test(
+    'loads a large UTF-8 file while the root event loop stays responsive',
+    () async {
+      final directory = await Directory.systemTemp.createTemp('geulbom_decode');
+      addTearDown(() => directory.delete(recursive: true));
+      final file = File('${directory.path}${Platform.pathSeparator}large.txt');
+      await file.writeAsString(List.filled(4 * 1024 * 1024, '가').join());
+      var timerTicks = 0;
+      final timer = Timer.periodic(
+        const Duration(milliseconds: 1),
+        (_) => timerTicks++,
+      );
+
+      final decoded = await loadTextFile(file.path);
+      timer.cancel();
+
+      expect(decoded.encoding, TextEncoding.utf8);
+      expect(decoded.text.length, 4 * 1024 * 1024);
+      expect(timerTicks, greaterThan(1));
+    },
+  );
+
   test('BOM과 UTF-8 유효성으로 인코딩을 판별한다', () {
     expect(
       detectTextEncoding(Uint8List.fromList([0xef, 0xbb, 0xbf, 0x61])),

@@ -56,6 +56,17 @@ void main() {
     expect(RgbColor.tryCreate(0, 256, 0), isNull);
   });
 
+  test('progress updates do not notify home listeners', () {
+    final store = AppStore(File('unused'));
+    var notifications = 0;
+    store.addListener(() => notifications++);
+
+    store.updateProgress('/book.txt', offset: 42, documentLength: 100);
+
+    expect(store.document('/book.txt').offset, 42);
+    expect(notifications, 0);
+  });
+
   test('손상된 저장 파일을 보존하고 기본값으로 복구한다', () async {
     final directory = await Directory.systemTemp.createTemp('geulbom_broken');
     addTearDown(() => directory.delete(recursive: true));

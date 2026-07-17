@@ -50,4 +50,33 @@ void main() {
       'older.txt',
     ]);
   });
+
+  test('stats visible entries concurrently with a bounded batch', () async {
+    final directory = await Directory.systemTemp.createTemp('geulbom_many');
+    addTearDown(() => directory.delete(recursive: true));
+    for (var index = 0; index < 64; index++) {
+      await File(
+        '${directory.path}${Platform.pathSeparator}$index.txt',
+      ).writeAsString('$index');
+    }
+    var active = 0;
+    var maxActive = 0;
+
+    final entries = await listTextEntries(
+      directory,
+      BrowserSort.name,
+      readStat: (entity) async {
+        active++;
+        if (active > maxActive) maxActive = active;
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+        final stat = await entity.stat();
+        active--;
+        return stat;
+      },
+    );
+
+    expect(entries, hasLength(64));
+    expect(maxActive, greaterThan(1));
+    expect(maxActive, lessThanOrEqualTo(32));
+  });
 }

@@ -70,7 +70,6 @@ class AppStore extends ChangeNotifier {
     final state = document(path);
     state.offset = offset.clamp(0, documentLength ?? offset);
     state.scrollAlignment = scrollAlignment.clamp(0, 1);
-    notifyListeners();
   }
 
   void addBookmark(String path, Bookmark bookmark) {

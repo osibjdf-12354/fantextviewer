@@ -70,10 +70,9 @@ class _ReaderScreenState extends State<ReaderScreen> {
     });
     try {
       final file = File(widget.path);
-      final bytes = await file.readAsBytes();
       final saved = widget.store.document(widget.path).encoding;
       final encoding = forced ?? _encodingByName(saved);
-      final document = await decodeText(bytes, forced: encoding);
+      final document = await loadTextFile(widget.path, forced: encoding);
       final stat = await file.stat();
       if (!mounted || generation != _generation) return;
 
@@ -230,7 +229,6 @@ class _ReaderViewState extends State<ReaderView> {
   double _paginationProgress = 0;
   int _paginationGeneration = 0;
   bool _paginationComplete = false;
-  bool _wakelockEnabled = false;
 
   List<TextPage>? get _completePages => _paginationComplete ? _pages : null;
 
@@ -299,7 +297,7 @@ class _ReaderViewState extends State<ReaderView> {
     _saveTimer?.cancel();
     _pageController?.dispose();
     unawaited(widget.store.save());
-    if (_wakelockEnabled) unawaited(WakelockPlus.disable());
+    unawaited(WakelockPlus.disable());
     super.dispose();
   }
 
@@ -1252,15 +1250,8 @@ class _ReaderViewState extends State<ReaderView> {
     _pendingTargetPage = null;
   }
 
-  Future<void> _syncWakelock() async {
-    if (_settings.keepAwake) {
-      await WakelockPlus.enable();
-      _wakelockEnabled = true;
-    } else if (_wakelockEnabled) {
-      await WakelockPlus.disable();
-      _wakelockEnabled = false;
-    }
-  }
+  Future<void> _syncWakelock() =>
+      WakelockPlus.toggle(enable: _settings.keepAwake);
 
   Future<void> _showFileInfo() async {
     await showDialog<void>(

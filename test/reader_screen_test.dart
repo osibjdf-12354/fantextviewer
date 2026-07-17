@@ -17,6 +17,33 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
 
 void main() {
+  testWidgets('late wakelock enable is disabled after reader disposal', (
+    tester,
+  ) async {
+    const channel =
+        'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle';
+    final enableReply = Completer<ByteData?>();
+    final success = const StandardMessageCodec().encodeMessage(<Object?>[null]);
+    var calls = 0;
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMessageHandler(channel, (_) {
+      calls++;
+      return calls == 1 ? enableReply.future : Future.value(success);
+    });
+    addTearDown(() => messenger.setMockMessageHandler(channel, null));
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(keepAwake: true));
+
+    await _pumpReader(tester, store, 'text');
+    expect(calls, 1);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    enableReply.complete(success);
+    await tester.pump();
+
+    expect(calls, 2);
+  });
+
   testWidgets('large scroll mode paginates only on demand and after resize', (
     tester,
   ) async {

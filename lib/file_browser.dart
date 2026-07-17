@@ -24,22 +24,34 @@ class BrowserEntry {
 
 Future<List<BrowserEntry>> listTextEntries(
   Directory directory,
-  BrowserSort sort,
-) async {
-  final entries = <BrowserEntry>[];
+  BrowserSort sort, {
+  Future<FileStat> Function(FileSystemEntity entity)? readStat,
+}) async {
+  final candidates =
+      <({FileSystemEntity entity, String name, bool isDirectory})>[];
   await for (final entity in directory.list(followLinks: false)) {
     final name = entity.path.split(Platform.pathSeparator).last;
     if (name.startsWith('.')) continue;
     final isDirectory = entity is Directory;
     if (!isDirectory && !name.toLowerCase().endsWith('.txt')) continue;
-    final stat = await entity.stat();
-    entries.add(
-      BrowserEntry(
-        path: entity.path,
-        name: name,
-        isDirectory: isDirectory,
-        modified: stat.modified,
-        size: stat.size,
+    candidates.add((entity: entity, name: name, isDirectory: isDirectory));
+  }
+  final stat = readStat ?? (entity) => entity.stat();
+  final entries = <BrowserEntry>[];
+  for (var start = 0; start < candidates.length; start += 32) {
+    final end = start + 32 < candidates.length ? start + 32 : candidates.length;
+    entries.addAll(
+      await Future.wait(
+        candidates.sublist(start, end).map((candidate) async {
+          final info = await stat(candidate.entity);
+          return BrowserEntry(
+            path: candidate.entity.path,
+            name: candidate.name,
+            isDirectory: candidate.isDirectory,
+            modified: info.modified,
+            size: info.size,
+          );
+        }),
       ),
     );
   }
