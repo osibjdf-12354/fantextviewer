@@ -1309,13 +1309,165 @@ void main() {
       isNull,
     );
   });
+
+  testWidgets('표시 설정에서 로컬 글꼴을 가져와 미리보기와 본문에 적용한다', (tester) async {
+    final root = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_font_ui'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
+    final source = File('${root.path}${Platform.pathSeparator}나눔명조.ttf');
+    await tester.runAsync(() => source.writeAsBytes([1, 2, 3]));
+    final library = FontLibrary(
+      Directory('${root.path}${Platform.pathSeparator}fonts'),
+      registerFont: (_, _) async {},
+    );
+    final store = _MemoryStore();
+    await _pumpReader(
+      tester,
+      store,
+      '본문',
+      fontLibrary: library,
+      pickFont: () async => source.path,
+    );
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await _pumpUntil(
+      tester,
+      () => find.text('로컬 글꼴 가져오기').evaluate().isNotEmpty,
+    );
+    await tester.tap(find.text('로컬 글꼴 가져오기'));
+    await _pumpUntil(tester, () => find.text('나눔명조').evaluate().isNotEmpty);
+
+    expect(find.text('나눔명조'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const Key('font-preview')))
+          .style
+          ?.fontFamily,
+      fontFamilyFor('나눔명조.ttf'),
+    );
+    expect(await tester.runAsync(source.exists), isTrue);
+    expect(
+      await tester.runAsync(() => library.findFont('나눔명조.ttf')),
+      isNotNull,
+    );
+
+    await tester.ensureVisible(find.text('적용'));
+    await tester.tap(find.text('적용'));
+    await tester.pumpAndSettle();
+
+    expect(store.data.settings.fontFileName, '나눔명조.ttf');
+    expect(
+      tester
+          .widget<SelectableText>(find.byType(SelectableText))
+          .style
+          ?.fontFamily,
+      fontFamilyFor('나눔명조.ttf'),
+    );
+  });
+
+  testWidgets('지원하지 않는 글꼴 파일은 한국어 오류를 표시한다', (tester) async {
+    final root = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_bad_font_ui'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
+    final source = File('${root.path}${Platform.pathSeparator}font.txt');
+    await tester.runAsync(() => source.writeAsString('text'));
+    final library = FontLibrary(
+      Directory('${root.path}${Platform.pathSeparator}fonts'),
+      registerFont: (_, _) async {},
+    );
+    await _pumpReader(
+      tester,
+      _MemoryStore(),
+      '본문',
+      fontLibrary: library,
+      pickFont: () async => source.path,
+    );
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await _pumpUntil(
+      tester,
+      () => find.text('로컬 글꼴 가져오기').evaluate().isNotEmpty,
+    );
+    await tester.tap(find.text('로컬 글꼴 가져오기'));
+    await _pumpUntil(
+      tester,
+      () => find.text('지원하는 글꼴은 TTF 또는 OTF 파일입니다.').evaluate().isNotEmpty,
+    );
+
+    expect(find.text('지원하는 글꼴은 TTF 또는 OTF 파일입니다.'), findsOneWidget);
+    expect(await tester.runAsync(library.listFonts), isEmpty);
+  });
+
+  testWidgets('가져온 글꼴을 확인 후 삭제하고 시스템 기본값으로 복구한다', (tester) async {
+    const channel =
+        'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle';
+    final success = const StandardMessageCodec().encodeMessage(<Object?>[null]);
+    final messenger = tester.binding.defaultBinaryMessenger;
+    messenger.setMockMessageHandler(channel, (_) async => success);
+    addTearDown(() => messenger.setMockMessageHandler(channel, null));
+    final root = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_delete_font_ui'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
+    final source = File('${root.path}${Platform.pathSeparator}고딕.otf');
+    await tester.runAsync(() => source.writeAsBytes([1]));
+    final library = FontLibrary(
+      Directory('${root.path}${Platform.pathSeparator}fonts'),
+      registerFont: (_, _) async {},
+    );
+    final imported = (await tester.runAsync(
+      () => library.importFont(source.path),
+    ))!;
+    final store = _MemoryStore()
+      ..updateSettings(ReaderSettings(fontFileName: imported.fileName));
+    await _pumpReader(tester, store, '본문', fontLibrary: library);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await _pumpUntil(
+      tester,
+      () => find
+          .byKey(Key('delete-font-${imported.fileName}'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    await tester.tap(find.byKey(Key('delete-font-${imported.fileName}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '삭제'));
+    await _pumpUntil(tester, () => !imported.file.existsSync());
+
+    expect(await tester.runAsync(imported.file.exists), isFalse);
+    expect(store.data.settings.fontFileName, isNull);
+    expect(find.text('고딕'), findsNothing);
+  });
+}
+
+Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) fail('비동기 UI 작업이 완료되지 않았습니다.');
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 1)),
+    );
+  }
+  await tester.pumpAndSettle();
 }
 
 Future<void> _pumpReader(
   WidgetTester tester,
   _MemoryStore store,
-  String text,
-) async {
+  String text, {
+  FontLibrary? fontLibrary,
+  Future<String?> Function()? pickFont,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: ReaderView(
@@ -1324,6 +1476,8 @@ Future<void> _pumpReader(
         text: text,
         encoding: TextEncoding.utf8,
         store: store,
+        fontLibrary: fontLibrary,
+        pickFont: pickFont ?? pickFontFile,
       ),
     ),
   );

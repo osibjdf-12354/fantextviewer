@@ -1054,6 +1054,11 @@ class _ReaderViewState extends State<ReaderView> {
   }
 
   Future<void> _showSettings() async {
+    final fontLibrary = widget.fontLibrary;
+    var fonts = fontLibrary == null
+        ? <ImportedFont>[]
+        : await fontLibrary.listFonts();
+    if (!mounted) return;
     var draft = _settings.copyWith(
       fontSize: _settings.fontSize.round().clamp(14, 36).toDouble(),
       lineHeight: ((_settings.lineHeight * 10).round() / 10)
@@ -1103,6 +1108,129 @@ class _ReaderViewState extends State<ReaderView> {
                         }),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('글꼴'),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: ChoiceChip(
+                      key: const Key('font-option-system'),
+                      label: const Text('시스템 기본 글꼴'),
+                      selected: draft.fontFileName == null,
+                      onSelected: (_) => setSheetState(() {
+                        draft = draft.copyWith(fontFileName: null);
+                      }),
+                    ),
+                  ),
+                  for (final font in fonts)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: ChoiceChip(
+                              key: Key('font-option-${font.fileName}'),
+                              label: Text(font.label),
+                              selected: draft.fontFileName == font.fileName,
+                              onSelected: (_) async {
+                                try {
+                                  await fontLibrary!.loadFont(font);
+                                  if (!sheetContext.mounted) return;
+                                  setSheetState(() {
+                                    draft = draft.copyWith(
+                                      fontFileName: font.fileName,
+                                    );
+                                  });
+                                } catch (_) {
+                                  _showMessage('글꼴을 불러오지 못했습니다.');
+                                }
+                              },
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          key: Key('delete-font-${font.fileName}'),
+                          tooltip: '${font.label} 삭제',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () async {
+                            final confirmed = await showDialog<bool>(
+                              context: sheetContext,
+                              builder: (dialogContext) => AlertDialog(
+                                title: const Text('글꼴 삭제'),
+                                content: Text(
+                                  '${font.label} 글꼴의 앱 내부 복사본을 삭제할까요?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, false),
+                                    child: const Text('취소'),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () =>
+                                        Navigator.pop(dialogContext, true),
+                                    child: const Text('삭제'),
+                                  ),
+                                ],
+                              ),
+                            );
+                            if (confirmed != true) return;
+                            try {
+                              await fontLibrary!.deleteFont(font);
+                              if (!sheetContext.mounted) return;
+                              final reset =
+                                  draft.fontFileName == font.fileName ||
+                                  _settings.fontFileName == font.fileName;
+                              setSheetState(() {
+                                fonts.removeWhere(
+                                  (item) => item.fileName == font.fileName,
+                                );
+                                if (reset) {
+                                  draft = draft.copyWith(fontFileName: null);
+                                }
+                              });
+                              if (reset) {
+                                _applySettings(
+                                  _settings.copyWith(fontFileName: null),
+                                );
+                                await widget.store.save();
+                              }
+                            } catch (_) {
+                              _showMessage('글꼴을 삭제하지 못했습니다.');
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 4),
+                  OutlinedButton.icon(
+                    onPressed: fontLibrary == null
+                        ? null
+                        : () async {
+                            final path = await widget.pickFont();
+                            if (path == null) return;
+                            try {
+                              final font = await fontLibrary.importFont(path);
+                              if (!sheetContext.mounted) return;
+                              setSheetState(() {
+                                fonts = [...fonts, font]
+                                  ..sort(
+                                    (a, b) => a.label.toLowerCase().compareTo(
+                                      b.label.toLowerCase(),
+                                    ),
+                                  );
+                                draft = draft.copyWith(
+                                  fontFileName: font.fileName,
+                                );
+                              });
+                            } on FormatException catch (error) {
+                              _showMessage(error.message.toString());
+                            } catch (_) {
+                              _showMessage('글꼴을 가져오지 못했습니다.');
+                            }
+                          },
+                    icon: const Icon(Icons.add),
+                    label: const Text('로컬 글꼴 가져오기'),
                   ),
                   _SettingStepper(
                     settingKey: 'font-size',
@@ -1194,8 +1322,10 @@ class _ReaderViewState extends State<ReaderView> {
                     color: Color(draft.background.value),
                     child: Text(
                       '한글 미리보기 가나다라',
+                      key: const Key('font-preview'),
                       style: TextStyle(
                         color: Color(draft.foreground.value),
+                        fontFamily: fontFamilyFor(draft.fontFileName),
                         fontSize: 18,
                       ),
                     ),
