@@ -1404,13 +1404,41 @@ void main() {
     expect(await tester.runAsync(library.listFonts), isEmpty);
   });
 
+  testWidgets('글꼴 선택기 오류는 한국어 가져오기 오류를 표시한다', (tester) async {
+    final root = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_picker_error_ui'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
+    final library = FontLibrary(
+      Directory('${root.path}${Platform.pathSeparator}fonts'),
+      registerFont: (_, _) async {},
+    );
+    await _pumpReader(
+      tester,
+      _MemoryStore(),
+      '본문',
+      fontLibrary: library,
+      pickFont: () async => throw StateError('picker failed'),
+    );
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await _pumpUntil(
+      tester,
+      () => find.text('로컬 글꼴 가져오기').evaluate().isNotEmpty,
+    );
+    await tester.tap(find.text('로컬 글꼴 가져오기'));
+    await _pumpUntil(
+      tester,
+      () => find.text('글꼴을 가져오지 못했습니다.').evaluate().isNotEmpty,
+    );
+
+    expect(find.text('글꼴을 가져오지 못했습니다.'), findsOneWidget);
+  });
+
   testWidgets('가져온 글꼴을 확인 후 삭제하고 시스템 기본값으로 복구한다', (tester) async {
-    const channel =
-        'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle';
-    final success = const StandardMessageCodec().encodeMessage(<Object?>[null]);
-    final messenger = tester.binding.defaultBinaryMessenger;
-    messenger.setMockMessageHandler(channel, (_) async => success);
-    addTearDown(() => messenger.setMockMessageHandler(channel, null));
+    _mockWakelock(tester);
     final root = (await tester.runAsync(
       () => Directory.systemTemp.createTemp('geulbom_delete_font_ui'),
     ))!;
@@ -1424,7 +1452,7 @@ void main() {
     final imported = (await tester.runAsync(
       () => library.importFont(source.path),
     ))!;
-    final store = _MemoryStore()
+    final store = _TrackingStore()
       ..updateSettings(ReaderSettings(fontFileName: imported.fileName));
     await _pumpReader(tester, store, '본문', fontLibrary: library);
 
@@ -1441,12 +1469,109 @@ void main() {
     await tester.tap(find.byKey(Key('delete-font-${imported.fileName}')));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '삭제'));
-    await _pumpUntil(tester, () => !imported.file.existsSync());
+    await _pumpUntil(
+      tester,
+      () => !imported.file.existsSync() && store.saveCalls > 0,
+    );
 
     expect(await tester.runAsync(imported.file.exists), isFalse);
     expect(store.data.settings.fontFileName, isNull);
+    expect(store.saveCalls, 1);
     expect(find.text('고딕'), findsNothing);
   });
+
+  testWidgets('선택 글꼴 삭제 중 설정창을 닫아도 기본값을 즉시 저장한다', (tester) async {
+    _mockWakelock(tester);
+    final root = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_delayed_delete_ui'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
+    final source = File('${root.path}${Platform.pathSeparator}명조.otf');
+    await tester.runAsync(() => source.writeAsBytes([1]));
+    final library = _DelayedDeleteFontLibrary(
+      Directory('${root.path}${Platform.pathSeparator}fonts'),
+    );
+    final imported = (await tester.runAsync(
+      () => library.importFont(source.path),
+    ))!;
+    final store = _TrackingStore()
+      ..updateSettings(ReaderSettings(fontFileName: imported.fileName));
+    await _pumpReader(tester, store, '본문', fontLibrary: library);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await _pumpUntil(
+      tester,
+      () => find
+          .byKey(Key('delete-font-${imported.fileName}'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    await tester.tap(find.byKey(Key('delete-font-${imported.fileName}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '삭제'));
+    await _pumpUntil(tester, () => library.deleteStarted);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    library.completeDelete();
+    await _pumpUntil(tester, () => !imported.file.existsSync());
+
+    expect(store.data.settings.fontFileName, isNull);
+    expect(store.saveCalls, 1);
+  });
+
+  testWidgets('글꼴 삭제 후 설정 저장 실패는 삭제 성공과 구분해 안내한다', (tester) async {
+    _mockWakelock(tester);
+    final root = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_delete_save_error_ui'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
+    final source = File('${root.path}${Platform.pathSeparator}고딕.otf');
+    await tester.runAsync(() => source.writeAsBytes([1]));
+    final library = FontLibrary(
+      Directory('${root.path}${Platform.pathSeparator}fonts'),
+      registerFont: (_, _) async {},
+    );
+    final imported = (await tester.runAsync(
+      () => library.importFont(source.path),
+    ))!;
+    final store = _TrackingStore(failNextSave: true)
+      ..updateSettings(ReaderSettings(fontFileName: imported.fileName));
+    await _pumpReader(tester, store, '본문', fontLibrary: library);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await _pumpUntil(
+      tester,
+      () => find
+          .byKey(Key('delete-font-${imported.fileName}'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    await tester.tap(find.byKey(Key('delete-font-${imported.fileName}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '삭제'));
+    await _pumpUntil(
+      tester,
+      () => find.text('글꼴은 삭제했지만 설정을 저장하지 못했습니다.').evaluate().isNotEmpty,
+    );
+
+    expect(await tester.runAsync(imported.file.exists), isFalse);
+    expect(store.data.settings.fontFileName, isNull);
+    expect(find.text('글꼴을 삭제하지 못했습니다.'), findsNothing);
+  });
+}
+
+void _mockWakelock(WidgetTester tester) {
+  const channel =
+      'dev.flutter.pigeon.wakelock_plus_platform_interface.WakelockPlusApi.toggle';
+  final success = const StandardMessageCodec().encodeMessage(<Object?>[null]);
+  final messenger = tester.binding.defaultBinaryMessenger;
+  messenger.setMockMessageHandler(channel, (_) async => success);
+  addTearDown(() => messenger.setMockMessageHandler(channel, null));
 }
 
 Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {
@@ -1489,6 +1614,39 @@ class _MemoryStore extends AppStore {
 
   @override
   Future<void> save() async {}
+}
+
+class _TrackingStore extends _MemoryStore {
+  _TrackingStore({this.failNextSave = false});
+
+  int saveCalls = 0;
+  bool failNextSave;
+
+  @override
+  Future<void> save() async {
+    saveCalls++;
+    if (failNextSave) {
+      failNextSave = false;
+      throw StateError('save failed');
+    }
+  }
+}
+
+class _DelayedDeleteFontLibrary extends FontLibrary {
+  _DelayedDeleteFontLibrary(super.directory)
+    : super(registerFont: (_, _) async {});
+
+  final _deleteCompletion = Completer<void>();
+  var deleteStarted = false;
+
+  void completeDelete() => _deleteCompletion.complete();
+
+  @override
+  Future<void> deleteFont(ImportedFont font) async {
+    deleteStarted = true;
+    await _deleteCompletion.future;
+    await super.deleteFont(font);
+  }
 }
 
 class _MemoryPageIndexCache extends PageIndexCache {

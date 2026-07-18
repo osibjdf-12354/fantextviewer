@@ -1142,7 +1142,9 @@ class _ReaderViewState extends State<ReaderView> {
                                     );
                                   });
                                 } catch (_) {
-                                  _showMessage('글꼴을 불러오지 못했습니다.');
+                                  if (mounted) {
+                                    _showMessage('글꼴을 불러오지 못했습니다.');
+                                  }
                                 }
                               },
                             ),
@@ -1175,29 +1177,44 @@ class _ReaderViewState extends State<ReaderView> {
                               ),
                             );
                             if (confirmed != true) return;
+                            final reset =
+                                draft.fontFileName == font.fileName ||
+                                _settings.fontFileName == font.fileName;
+                            final resetSettings = reset
+                                ? _settings.copyWith(fontFileName: null)
+                                : null;
+                            final store = widget.store;
                             try {
                               await fontLibrary!.deleteFont(font);
-                              if (!sheetContext.mounted) return;
-                              final reset =
-                                  draft.fontFileName == font.fileName ||
-                                  _settings.fontFileName == font.fileName;
-                              setSheetState(() {
-                                fonts.removeWhere(
-                                  (item) => item.fileName == font.fileName,
-                                );
-                                if (reset) {
-                                  draft = draft.copyWith(fontFileName: null);
-                                }
-                              });
-                              if (reset) {
-                                _applySettings(
-                                  _settings.copyWith(fontFileName: null),
-                                );
-                                await widget.store.save();
-                              }
                             } catch (_) {
-                              _showMessage('글꼴을 삭제하지 못했습니다.');
+                              if (mounted) {
+                                _showMessage('글꼴을 삭제하지 못했습니다.');
+                              }
+                              return;
                             }
+                            if (reset) {
+                              if (mounted) {
+                                _applySettings(resetSettings!);
+                              } else {
+                                store.updateSettings(resetSettings!);
+                              }
+                              try {
+                                await store.save();
+                              } catch (_) {
+                                if (mounted) {
+                                  _showMessage('글꼴은 삭제했지만 설정을 저장하지 못했습니다.');
+                                }
+                              }
+                            }
+                            if (!mounted || !sheetContext.mounted) return;
+                            setSheetState(() {
+                              fonts.removeWhere(
+                                (item) => item.fileName == font.fileName,
+                              );
+                              if (reset) {
+                                draft = draft.copyWith(fontFileName: null);
+                              }
+                            });
                           },
                         ),
                       ],
@@ -1207,7 +1224,15 @@ class _ReaderViewState extends State<ReaderView> {
                     onPressed: fontLibrary == null
                         ? null
                         : () async {
-                            final path = await widget.pickFont();
+                            String? path;
+                            try {
+                              path = await widget.pickFont();
+                            } catch (_) {
+                              if (mounted) {
+                                _showMessage('글꼴을 가져오지 못했습니다.');
+                              }
+                              return;
+                            }
                             if (path == null) return;
                             try {
                               final font = await fontLibrary.importFont(path);
@@ -1224,9 +1249,13 @@ class _ReaderViewState extends State<ReaderView> {
                                 );
                               });
                             } on FormatException catch (error) {
-                              _showMessage(error.message.toString());
+                              if (mounted) {
+                                _showMessage(error.message.toString());
+                              }
                             } catch (_) {
-                              _showMessage('글꼴을 가져오지 못했습니다.');
+                              if (mounted) {
+                                _showMessage('글꼴을 가져오지 못했습니다.');
+                              }
                             }
                           },
                     icon: const Icon(Icons.add),
