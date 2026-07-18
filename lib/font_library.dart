@@ -1,15 +1,16 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
 
 typedef FontRegistrar = Future<void> Function(String family, Uint8List bytes);
+typedef FontCopier = Future<void> Function(File source, File target);
 
 class ImportedFont {
-  const ImportedFont(this.file);
+  const ImportedFont._(this.file, this.version);
 
   final File file;
+  final String version;
 
   String get fileName => file.path.split(Platform.pathSeparator).last;
 
@@ -34,24 +35,38 @@ Future<String?> pickFontFile() async {
 }
 
 class FontLibrary {
-  FontLibrary(this.directory, {FontRegistrar registerFont = _loadFontBytes})
-    : _registerFont = registerFont;
+  FontLibrary(
+    this.directory, {
+    this.registerFont = _loadFontBytes,
+    this.copyFont = _copyFontFile,
+  });
 
   final Directory directory;
-  final FontRegistrar _registerFont;
+  final FontRegistrar registerFont;
+  final FontCopier copyFont;
   final Set<String> _loadedFileNames = {};
+  final Map<String, String> _versions = {};
+
+  String? versionFor(String? fileName) =>
+      fileName == null ? null : _versions[fileName];
 
   Future<List<ImportedFont>> listFonts() async {
-    if (!await directory.exists()) return [];
+    if (!await directory.exists()) {
+      _versions.clear();
+      return [];
+    }
     final fonts = <ImportedFont>[];
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is File && _isFontPath(entity.path)) {
-        fonts.add(ImportedFont(entity));
+        fonts.add(await _describeFont(entity));
       }
     }
     fonts.sort(
       (a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()),
     );
+    _versions
+      ..clear()
+      ..addEntries(fonts.map((font) => MapEntry(font.fileName, font.version)));
     return fonts;
   }
 
@@ -71,27 +86,30 @@ class FontLibrary {
     final target = await _availableTarget(
       source.path.split(Platform.pathSeparator).last,
     );
-    await source.copy(target.path);
-    final imported = ImportedFont(target);
     try {
+      await copyFont(source, target);
+      final imported = await _describeFont(target);
       await loadFont(imported);
+      _versions[imported.fileName] = imported.version;
       return imported;
-    } catch (_) {
-      if (await target.exists()) await target.delete();
-      rethrow;
+    } catch (error, stackTrace) {
+      try {
+        if (await target.exists()) await target.delete();
+      } catch (_) {}
+      Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
   Future<void> loadFont(ImportedFont font) async {
     if (_loadedFileNames.contains(font.fileName)) return;
-    await _registerFont(font.family, await font.file.readAsBytes());
+    await registerFont(font.family, await font.file.readAsBytes());
     _loadedFileNames.add(font.fileName);
   }
 
   Future<bool> loadSelected(String fileName) async {
-    final font = await findFont(fileName);
-    if (font == null) return false;
     try {
+      final font = await findFont(fileName);
+      if (font == null) return false;
       await loadFont(font);
       return true;
     } catch (_) {
@@ -101,6 +119,14 @@ class FontLibrary {
 
   Future<void> deleteFont(ImportedFont font) async {
     if (await font.file.exists()) await font.file.delete();
+    _versions.remove(font.fileName);
+  }
+
+  Future<ImportedFont> _describeFont(File file) async {
+    final stat = await file.stat();
+    final version =
+        '${stat.size}:${stat.modified.toUtc().microsecondsSinceEpoch}';
+    return ImportedFont._(file, version);
   }
 
   Future<File> _availableTarget(String fileName) async {
@@ -129,4 +155,8 @@ Future<void> _loadFontBytes(String family, Uint8List bytes) async {
   final loader = FontLoader(family)
     ..addFont(Future.value(ByteData.sublistView(bytes)));
   await loader.load();
+}
+
+Future<void> _copyFontFile(File source, File target) async {
+  await source.copy(target.path);
 }

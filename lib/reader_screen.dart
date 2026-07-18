@@ -548,6 +548,7 @@ class _ReaderViewState extends State<ReaderView> {
       'height': size.height,
       'fontSize': _settings.fontSize,
       'fontFileName': _settings.fontFileName,
+      'fontFileVersion': widget.fontLibrary?.versionFor(_settings.fontFileName),
       'lineHeight': _settings.lineHeight,
       'horizontalPadding': _settings.horizontalPadding,
     });
@@ -1177,12 +1178,6 @@ class _ReaderViewState extends State<ReaderView> {
                               ),
                             );
                             if (confirmed != true) return;
-                            final reset =
-                                draft.fontFileName == font.fileName ||
-                                _settings.fontFileName == font.fileName;
-                            final resetSettings = reset
-                                ? _settings.copyWith(fontFileName: null)
-                                : null;
                             final store = widget.store;
                             try {
                               await fontLibrary!.deleteFont(font);
@@ -1192,11 +1187,15 @@ class _ReaderViewState extends State<ReaderView> {
                               }
                               return;
                             }
-                            if (reset) {
+                            final latestSettings = store.data.settings;
+                            if (latestSettings.fontFileName == font.fileName) {
+                              final resetSettings = latestSettings.copyWith(
+                                fontFileName: null,
+                              );
                               if (mounted) {
-                                _applySettings(resetSettings!);
+                                _applySettings(resetSettings);
                               } else {
-                                store.updateSettings(resetSettings!);
+                                store.updateSettings(resetSettings);
                               }
                               try {
                                 await store.save();
@@ -1211,7 +1210,7 @@ class _ReaderViewState extends State<ReaderView> {
                               fonts.removeWhere(
                                 (item) => item.fileName == font.fileName,
                               );
-                              if (reset) {
+                              if (draft.fontFileName == font.fileName) {
                                 draft = draft.copyWith(fontFileName: null);
                               }
                             });

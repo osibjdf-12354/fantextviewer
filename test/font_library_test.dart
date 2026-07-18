@@ -69,6 +69,30 @@ void main() {
     },
   );
 
+  test('removes a partial copy and preserves the copy error', () async {
+    final root = await Directory.systemTemp.createTemp('geulbom_partial_font');
+    addTearDown(() => root.delete(recursive: true));
+    final source = File('${root.path}${Platform.pathSeparator}partial.ttf');
+    await source.writeAsBytes([1, 2, 3]);
+    final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
+    final copyError = StateError('copy failed');
+    final library = FontLibrary(
+      fonts,
+      registerFont: (_, _) async {},
+      copyFont: (source, target) async {
+        await target.writeAsBytes([1]);
+        Error.throwWithStackTrace(copyError, StackTrace.current);
+      },
+    );
+
+    await expectLater(
+      library.importFont(source.path),
+      throwsA(same(copyError)),
+    );
+
+    expect(await library.listFonts(), isEmpty);
+  });
+
   test(
     'loadSelected returns false for a missing or unloadable saved font',
     () async {

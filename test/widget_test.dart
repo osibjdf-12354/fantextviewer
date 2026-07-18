@@ -22,6 +22,34 @@ void main() {
     expect(store.data.settings.fontFileName, isNull);
   });
 
+  test('글꼴 목록 조회가 실패해도 시스템 기본 글꼴로 시작한다', () async {
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(fontFileName: 'saved.ttf'));
+
+    await restoreSelectedFont(
+      store,
+      _FailingCatalogFontLibrary(Directory('unused-fonts')),
+    );
+
+    expect(store.data.settings.fontFileName, isNull);
+  });
+
+  test('기본 글꼴 복구 저장이 실패해도 복구된 설정으로 시작한다', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'geulbom_font_save_failure',
+    );
+    addTearDown(() => root.delete(recursive: true));
+    final store = _FailingSaveStore()
+      ..updateSettings(const ReaderSettings(fontFileName: 'missing.ttf'));
+
+    await restoreSelectedFont(
+      store,
+      FontLibrary(Directory('${root.path}${Platform.pathSeparator}fonts')),
+    );
+
+    expect(store.data.settings.fontFileName, isNull);
+  });
+
   testWidgets('앱이 한국어 제목과 파일 탐색 버튼으로 시작한다', (tester) async {
     final store = _MemoryStore();
 
@@ -38,4 +66,18 @@ class _MemoryStore extends AppStore {
 
   @override
   Future<void> save() async {}
+}
+
+class _FailingSaveStore extends _MemoryStore {
+  @override
+  Future<void> save() async => throw StateError('save failed');
+}
+
+class _FailingCatalogFontLibrary extends FontLibrary {
+  _FailingCatalogFontLibrary(super.directory);
+
+  @override
+  Future<List<ImportedFont>> listFonts() async {
+    throw FileSystemException('catalog failed');
+  }
 }

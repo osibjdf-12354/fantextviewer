@@ -54,6 +54,47 @@ void main() {
     expect(cache.loadSignatures.toSet(), hasLength(2));
   });
 
+  testWidgets('같은 파일명의 글꼴이 바뀌면 새 페이지 캐시 서명을 사용한다', (tester) async {
+    final root = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_font_version'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
+    final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
+    final font = File('${fonts.path}${Platform.pathSeparator}same.ttf');
+    await tester.runAsync(() async {
+      await fonts.create();
+      await font.writeAsBytes([1]);
+    });
+    final cache = _MemoryPageIndexCache();
+
+    Future<void> pumpFontLibrary(FontLibrary library, Object key) async {
+      await tester.runAsync(library.listFonts);
+      final store = _MemoryStore()
+        ..updateSettings(const ReaderSettings(fontFileName: 'same.ttf'));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderView(
+            key: ValueKey(key),
+            path: '/book.txt',
+            title: 'book.txt',
+            text: '본문',
+            encoding: TextEncoding.utf8,
+            store: store,
+            pageIndexCache: cache,
+            fontLibrary: library,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpFontLibrary(FontLibrary(fonts), 'before');
+    await tester.runAsync(() => font.writeAsBytes([1, 2]));
+    await pumpFontLibrary(FontLibrary(fonts), 'after');
+
+    expect(cache.loadSignatures.toSet(), hasLength(2));
+  });
+
   testWidgets('late wakelock enable is disabled after reader disposal', (
     tester,
   ) async {
@@ -1520,6 +1561,73 @@ void main() {
 
     expect(store.data.settings.fontFileName, isNull);
     expect(store.saveCalls, 1);
+  });
+
+  testWidgets('글꼴 삭제 중 바뀐 최신 표시 설정과 글꼴을 보존한다', (tester) async {
+    _mockWakelock(tester);
+    final root = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_delete_race_ui'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
+    final source = File('${root.path}${Platform.pathSeparator}old.otf');
+    final replacementSource = File(
+      '${root.path}${Platform.pathSeparator}replacement.otf',
+    );
+    await tester.runAsync(() async {
+      await source.writeAsBytes([1]);
+      await replacementSource.writeAsBytes([2]);
+    });
+    final library = _DelayedDeleteFontLibrary(
+      Directory('${root.path}${Platform.pathSeparator}fonts'),
+    );
+    final imported = (await tester.runAsync(
+      () => library.importFont(source.path),
+    ))!;
+    final replacement = (await tester.runAsync(
+      () => library.importFont(replacementSource.path),
+    ))!;
+    final store = _TrackingStore()
+      ..updateSettings(ReaderSettings(fontFileName: imported.fileName));
+    await _pumpReader(tester, store, '본문', fontLibrary: library);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await _pumpUntil(
+      tester,
+      () => find
+          .byKey(Key('delete-font-${imported.fileName}'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    await tester.tap(find.byKey(Key('delete-font-${imported.fileName}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '삭제'));
+    await _pumpUntil(tester, () => library.deleteStarted);
+
+    store.updateSettings(
+      ReaderSettings(
+        mode: ReadingMode.page,
+        background: const RgbColor(1, 2, 3),
+        foreground: const RgbColor(4, 5, 6),
+        fontFileName: replacement.fileName,
+        fontSize: 31,
+        lineHeight: 2.1,
+        horizontalPadding: 33,
+      ),
+    );
+    library.completeDelete();
+    await _pumpUntil(tester, () => !imported.file.existsSync());
+
+    final latest = store.data.settings;
+    expect(latest.fontFileName, replacement.fileName);
+    expect(latest.mode, ReadingMode.page);
+    expect(latest.background, const RgbColor(1, 2, 3));
+    expect(latest.foreground, const RgbColor(4, 5, 6));
+    expect(latest.fontSize, 31);
+    expect(latest.lineHeight, 2.1);
+    expect(latest.horizontalPadding, 33);
+    expect(store.saveCalls, 0);
   });
 
   testWidgets('글꼴 삭제 후 설정 저장 실패는 삭제 성공과 구분해 안내한다', (tester) async {

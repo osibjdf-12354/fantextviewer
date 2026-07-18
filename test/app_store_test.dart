@@ -65,6 +65,16 @@ void main() {
     expect(const ReaderSettings().fontFileName, isNull);
   });
 
+  test('absent font filename in JSON defaults to null', () {
+    expect(ReaderSettings.fromJson(const {}).fontFileName, isNull);
+  });
+
+  test('copyWith preserves the selected font when omitted', () {
+    const settings = ReaderSettings(fontFileName: 'saved.otf');
+
+    expect(settings.copyWith(fontSize: 24).fontFileName, 'saved.otf');
+  });
+
   test('progress updates do not notify home listeners', () {
     final store = AppStore(File('unused'));
     var notifications = 0;

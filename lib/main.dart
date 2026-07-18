@@ -30,7 +30,9 @@ Future<void> restoreSelectedFont(
   final selected = store.data.settings.fontFileName;
   if (selected == null || await fontLibrary.loadSelected(selected)) return;
   store.updateSettings(store.data.settings.copyWith(fontFileName: null));
-  await store.save();
+  try {
+    await store.save();
+  } catch (_) {}
 }
 
 class GeulbomApp extends StatelessWidget {
