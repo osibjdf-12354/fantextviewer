@@ -56,6 +56,15 @@ void main() {
     expect(RgbColor.tryCreate(0, 256, 0), isNull);
   });
 
+  test('persists and clears the selected font filename', () {
+    final imported = const ReaderSettings().copyWith(fontFileName: '하늘명조.otf');
+
+    expect(imported.fontFileName, '하늘명조.otf');
+    expect(ReaderSettings.fromJson(imported.toJson()).fontFileName, '하늘명조.otf');
+    expect(imported.copyWith(fontFileName: null).fontFileName, isNull);
+    expect(const ReaderSettings().fontFileName, isNull);
+  });
+
   test('progress updates do not notify home listeners', () {
     final store = AppStore(File('unused'));
     var notifications = 0;

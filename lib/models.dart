@@ -47,11 +47,14 @@ class RgbColor {
   int get hashCode => Object.hash(red, green, blue);
 }
 
+const _unchangedFontFileName = Object();
+
 class ReaderSettings {
   const ReaderSettings({
     this.mode = ReadingMode.scroll,
     this.background = const RgbColor(196, 236, 187),
     this.foreground = const RgbColor(32, 48, 32),
+    this.fontFileName,
     this.fontSize = 20,
     this.lineHeight = 1.65,
     this.horizontalPadding = 20,
@@ -61,6 +64,7 @@ class ReaderSettings {
   final ReadingMode mode;
   final RgbColor background;
   final RgbColor foreground;
+  final String? fontFileName;
   final double fontSize;
   final double lineHeight;
   final double horizontalPadding;
@@ -70,6 +74,7 @@ class ReaderSettings {
     ReadingMode? mode,
     RgbColor? background,
     RgbColor? foreground,
+    Object? fontFileName = _unchangedFontFileName,
     double? fontSize,
     double? lineHeight,
     double? horizontalPadding,
@@ -79,6 +84,9 @@ class ReaderSettings {
       mode: mode ?? this.mode,
       background: background ?? this.background,
       foreground: foreground ?? this.foreground,
+      fontFileName: identical(fontFileName, _unchangedFontFileName)
+          ? this.fontFileName
+          : fontFileName as String?,
       fontSize: fontSize ?? this.fontSize,
       lineHeight: lineHeight ?? this.lineHeight,
       horizontalPadding: horizontalPadding ?? this.horizontalPadding,
@@ -86,10 +94,11 @@ class ReaderSettings {
     );
   }
 
-  Map<String, Object> toJson() => {
+  Map<String, Object?> toJson() => {
     'mode': mode.name,
     'background': background.toJson(),
     'foreground': foreground.toJson(),
+    'fontFileName': fontFileName,
     'fontSize': fontSize,
     'lineHeight': lineHeight,
     'horizontalPadding': horizontalPadding,
@@ -108,6 +117,7 @@ class ReaderSettings {
       foreground: json['foreground'] == null
           ? const RgbColor(32, 48, 32)
           : RgbColor.fromJson(json['foreground'] as Map<String, dynamic>),
+      fontFileName: json['fontFileName'] as String?,
       fontSize: (json['fontSize'] as num? ?? 20).toDouble(),
       lineHeight: (json['lineHeight'] as num? ?? 1.65).toDouble(),
       horizontalPadding: (json['horizontalPadding'] as num? ?? 20).toDouble(),
