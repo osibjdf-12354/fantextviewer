@@ -61,9 +61,12 @@ void main() {
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
     final font = File('${fonts.path}${Platform.pathSeparator}same.ttf');
+    final originalModified = DateTime.utc(2026, 7, 18, 1);
+    final replacedModified = DateTime.utc(2026, 7, 18, 2);
     await tester.runAsync(() async {
       await fonts.create();
       await font.writeAsBytes([1]);
+      await font.setLastModified(originalModified);
     });
     final cache = _MemoryPageIndexCache();
 
@@ -89,7 +92,10 @@ void main() {
     }
 
     await pumpFontLibrary(FontLibrary(fonts), 'before');
-    await tester.runAsync(() => font.writeAsBytes([1, 2]));
+    await tester.runAsync(() async {
+      await font.writeAsBytes([2]);
+      await font.setLastModified(replacedModified);
+    });
     await pumpFontLibrary(FontLibrary(fonts), 'after');
 
     expect(cache.loadSignatures.toSet(), hasLength(2));
@@ -1519,6 +1525,80 @@ void main() {
     expect(store.data.settings.fontFileName, isNull);
     expect(store.saveCalls, 1);
     expect(find.text('고딕'), findsNothing);
+  });
+
+  testWidgets('초안에서만 선택한 글꼴 삭제도 저장 설정을 기본값으로 복구한다', (tester) async {
+    _mockWakelock(tester);
+    final root = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_delete_draft_font_ui'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
+    final savedSource = File('${root.path}${Platform.pathSeparator}saved.otf');
+    final draftSource = File('${root.path}${Platform.pathSeparator}draft.otf');
+    await tester.runAsync(() async {
+      await savedSource.writeAsBytes([1]);
+      await draftSource.writeAsBytes([2]);
+    });
+    final library = _DelayedDeleteFontLibrary(
+      Directory('${root.path}${Platform.pathSeparator}fonts'),
+    );
+    final saved = (await tester.runAsync(
+      () => library.importFont(savedSource.path),
+    ))!;
+    final drafted = (await tester.runAsync(
+      () => library.importFont(draftSource.path),
+    ))!;
+    final store = _TrackingStore()
+      ..updateSettings(ReaderSettings(fontFileName: saved.fileName));
+    await _pumpReader(tester, store, '본문', fontLibrary: library);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await _pumpUntil(
+      tester,
+      () => find
+          .byKey(Key('font-option-${drafted.fileName}'))
+          .evaluate()
+          .isNotEmpty,
+    );
+    await tester.tap(find.byKey(Key('font-option-${drafted.fileName}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(Key('delete-font-${drafted.fileName}')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '삭제'));
+    await _pumpUntil(tester, () => library.deleteStarted);
+
+    store.updateSettings(
+      ReaderSettings(
+        mode: ReadingMode.page,
+        background: const RgbColor(1, 2, 3),
+        foreground: const RgbColor(4, 5, 6),
+        fontFileName: saved.fileName,
+        fontSize: 31,
+        lineHeight: 2.1,
+        horizontalPadding: 33,
+      ),
+    );
+    library.completeDelete();
+    await _pumpUntil(tester, () => !drafted.file.existsSync());
+
+    final latest = store.data.settings;
+    expect(latest.fontFileName, isNull);
+    expect(latest.mode, ReadingMode.page);
+    expect(latest.background, const RgbColor(1, 2, 3));
+    expect(latest.foreground, const RgbColor(4, 5, 6));
+    expect(latest.fontSize, 31);
+    expect(latest.lineHeight, 2.1);
+    expect(latest.horizontalPadding, 33);
+    expect(
+      tester
+          .widget<ChoiceChip>(find.byKey(const Key('font-option-system')))
+          .selected,
+      isTrue,
+    );
+    expect(await tester.runAsync(saved.file.exists), isTrue);
+    expect(store.saveCalls, greaterThanOrEqualTo(1));
   });
 
   testWidgets('선택 글꼴 삭제 중 설정창을 닫아도 기본값을 즉시 저장한다', (tester) async {

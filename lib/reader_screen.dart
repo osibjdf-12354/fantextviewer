@@ -1179,6 +1179,8 @@ class _ReaderViewState extends State<ReaderView> {
                             );
                             if (confirmed != true) return;
                             final store = widget.store;
+                            final savedFontFileName =
+                                store.data.settings.fontFileName;
                             try {
                               await fontLibrary!.deleteFont(font);
                             } catch (_) {
@@ -1188,7 +1190,12 @@ class _ReaderViewState extends State<ReaderView> {
                               return;
                             }
                             final latestSettings = store.data.settings;
-                            if (latestSettings.fontFileName == font.fileName) {
+                            final resetSaved =
+                                latestSettings.fontFileName == font.fileName ||
+                                (draft.fontFileName == font.fileName &&
+                                    latestSettings.fontFileName ==
+                                        savedFontFileName);
+                            if (resetSaved) {
                               final resetSettings = latestSettings.copyWith(
                                 fontFileName: null,
                               );
