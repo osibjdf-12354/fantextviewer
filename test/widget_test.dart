@@ -3,9 +3,25 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geulbom/app_store.dart';
+import 'package:geulbom/font_library.dart';
 import 'package:geulbom/main.dart';
+import 'package:geulbom/models.dart';
 
 void main() {
+  test('저장한 글꼴 파일이 없으면 시스템 기본 글꼴로 복구한다', () async {
+    final root = await Directory.systemTemp.createTemp('geulbom_missing_font');
+    addTearDown(() => root.delete(recursive: true));
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(fontFileName: 'missing.ttf'));
+
+    await restoreSelectedFont(
+      store,
+      FontLibrary(Directory('${root.path}${Platform.pathSeparator}fonts')),
+    );
+
+    expect(store.data.settings.fontFileName, isNull);
+  });
+
   testWidgets('앱이 한국어 제목과 파일 탐색 버튼으로 시작한다', (tester) async {
     final store = _MemoryStore();
 

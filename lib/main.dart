@@ -5,6 +5,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'app_store.dart';
 import 'file_browser.dart';
+import 'font_library.dart';
 import 'models.dart';
 import 'reader_screen.dart';
 
@@ -15,13 +16,28 @@ Future<void> main() async {
     File('${directory.path}${Platform.pathSeparator}state.json'),
   );
   await store.load();
-  runApp(GeulbomApp(store: store));
+  final fontLibrary = FontLibrary(
+    Directory('${directory.path}${Platform.pathSeparator}fonts'),
+  );
+  await restoreSelectedFont(store, fontLibrary);
+  runApp(GeulbomApp(store: store, fontLibrary: fontLibrary));
+}
+
+Future<void> restoreSelectedFont(
+  AppStore store,
+  FontLibrary fontLibrary,
+) async {
+  final selected = store.data.settings.fontFileName;
+  if (selected == null || await fontLibrary.loadSelected(selected)) return;
+  store.updateSettings(store.data.settings.copyWith(fontFileName: null));
+  await store.save();
 }
 
 class GeulbomApp extends StatelessWidget {
-  const GeulbomApp({super.key, required this.store});
+  const GeulbomApp({super.key, required this.store, this.fontLibrary});
 
   final AppStore store;
+  final FontLibrary? fontLibrary;
 
   @override
   Widget build(BuildContext context) {
@@ -34,15 +50,16 @@ class GeulbomApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: HomeScreen(store: store),
+      home: HomeScreen(store: store, fontLibrary: fontLibrary),
     );
   }
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.store});
+  const HomeScreen({super.key, required this.store, this.fontLibrary});
 
   final AppStore store;
+  final FontLibrary? fontLibrary;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -78,7 +95,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (context) => ReaderScreen(path: path, store: widget.store),
+        builder: (context) => ReaderScreen(
+          path: path,
+          store: widget.store,
+          fontLibrary: widget.fontLibrary,
+        ),
       ),
     );
   }

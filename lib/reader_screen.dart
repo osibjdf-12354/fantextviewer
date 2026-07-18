@@ -11,6 +11,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'app_store.dart';
+import 'font_library.dart';
 import 'models.dart';
 import 'page_index_cache.dart';
 import 'text_document.dart';
@@ -40,10 +41,16 @@ typedef ReaderWindowPaginator =
 const _eagerScrollPaginationLimit = 256 * 1024;
 
 class ReaderScreen extends StatefulWidget {
-  const ReaderScreen({super.key, required this.path, required this.store});
+  const ReaderScreen({
+    super.key,
+    required this.path,
+    required this.store,
+    this.fontLibrary,
+  });
 
   final String path;
   final AppStore store;
+  final FontLibrary? fontLibrary;
 
   @override
   State<ReaderScreen> createState() => _ReaderScreenState();
@@ -169,6 +176,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       pageIndexCache: _pageIndexCache,
       onEncodingChanged: _load,
       onOpenFile: () => Navigator.of(context).pop(),
+      fontLibrary: widget.fontLibrary,
     );
   }
 }
@@ -188,6 +196,8 @@ class ReaderView extends StatefulWidget {
     this.windowPaginator = paginateTextWindow,
     this.onEncodingChanged,
     this.onOpenFile,
+    this.fontLibrary,
+    this.pickFont = pickFontFile,
   });
 
   final String path;
@@ -202,6 +212,8 @@ class ReaderView extends StatefulWidget {
   final ReaderWindowPaginator windowPaginator;
   final ValueChanged<TextEncoding>? onEncodingChanged;
   final VoidCallback? onOpenFile;
+  final FontLibrary? fontLibrary;
+  final Future<String?> Function() pickFont;
 
   @override
   State<ReaderView> createState() => _ReaderViewState();
@@ -274,6 +286,7 @@ class _ReaderViewState extends State<ReaderView> {
 
   TextStyle get _textStyle => TextStyle(
     color: Color(_settings.foreground.value),
+    fontFamily: fontFamilyFor(_settings.fontFileName),
     fontSize: _settings.fontSize,
     height: _settings.lineHeight,
   );
@@ -534,6 +547,7 @@ class _ReaderViewState extends State<ReaderView> {
       'width': size.width,
       'height': size.height,
       'fontSize': _settings.fontSize,
+      'fontFileName': _settings.fontFileName,
       'lineHeight': _settings.lineHeight,
       'horizontalPadding': _settings.horizontalPadding,
     });

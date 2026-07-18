@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geulbom/app_store.dart';
+import 'package:geulbom/font_library.dart';
 import 'package:geulbom/models.dart';
 import 'package:geulbom/page_index_cache.dart';
 import 'package:geulbom/reader_screen.dart';
@@ -17,6 +18,42 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
 
 void main() {
+  testWidgets('선택 글꼴을 본문에 적용하고 글꼴별 페이지 캐시를 사용한다', (tester) async {
+    const text = '본문';
+    final cache = _MemoryPageIndexCache();
+
+    Future<void> pumpFont(String fileName) async {
+      final store = _MemoryStore()
+        ..updateSettings(ReaderSettings(fontFileName: fileName));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderView(
+            key: ValueKey(fileName),
+            path: '/book.txt',
+            title: 'book.txt',
+            text: text,
+            encoding: TextEncoding.utf8,
+            store: store,
+            pageIndexCache: cache,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SelectableText>(find.byType(SelectableText))
+            .style
+            ?.fontFamily,
+        fontFamilyFor(fileName),
+      );
+    }
+
+    await pumpFont('명조.ttf');
+    await pumpFont('고딕.otf');
+
+    expect(cache.loadSignatures.toSet(), hasLength(2));
+  });
+
   testWidgets('late wakelock enable is disabled after reader disposal', (
     tester,
   ) async {
