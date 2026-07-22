@@ -43,7 +43,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('large.txt'), findsOneWidget);
-    expect(find.textContaining(RegExp(r'^\d+페이지$')), findsWidgets);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
+      matches(RegExp(r'^\d+$')),
+    );
     expect(find.textContaining('%'), findsNothing);
     expect(tester.takeException(), isNull);
 

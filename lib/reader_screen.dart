@@ -528,7 +528,10 @@ class _ReaderViewState extends State<ReaderView> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
-            '$_currentPageNumber페이지',
+            _settings.showTotalPages
+                ? '$_currentPageNumber/$_displayTotalPages'
+                : '$_currentPageNumber',
+            key: const Key('page-indicator'),
             style: TextStyle(color: Color(_settings.foreground.value)),
           ),
         ),
@@ -927,7 +930,7 @@ class _ReaderViewState extends State<ReaderView> {
       ),
     );
     _scheduleSave();
-    _showMessage('$page페이지에 북마크를 저장했습니다.');
+    _showMessage('$page에 북마크를 저장했습니다.');
   }
 
   Future<void> _showGoToDialog() async {
@@ -1031,7 +1034,10 @@ class _ReaderViewState extends State<ReaderView> {
                   title: Text(
                     bookmark.excerpt.isEmpty ? '빈 줄' : bookmark.excerpt,
                   ),
-                  subtitle: Text('${_pageNumberForOffset(bookmark.offset)}페이지'),
+                  subtitle: Text(
+                    '${_pageNumberForOffset(bookmark.offset)}',
+                    key: Key('bookmark-page-${bookmark.offset}'),
+                  ),
                   onTap: () {
                     Navigator.pop(sheetContext);
                     _jumpToOffset(bookmark.offset);
@@ -1106,6 +1112,29 @@ class _ReaderViewState extends State<ReaderView> {
                         selected: draft.mode == ReadingMode.page,
                         onSelected: (_) => setSheetState(() {
                           draft = draft.copyWith(mode: ReadingMode.page);
+                        }),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('페이지 표시'),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        key: const Key('page-display-current'),
+                        label: const Text('현재 페이지만'),
+                        selected: !draft.showTotalPages,
+                        onSelected: (_) => setSheetState(() {
+                          draft = draft.copyWith(showTotalPages: false);
+                        }),
+                      ),
+                      ChoiceChip(
+                        key: const Key('page-display-current-total'),
+                        label: const Text('현재/전체 페이지'),
+                        selected: draft.showTotalPages,
+                        onSelected: (_) => setSheetState(() {
+                          draft = draft.copyWith(showTotalPages: true);
                         }),
                       ),
                     ],

@@ -235,7 +235,10 @@ void main() {
     await tester.pump();
 
     expect(store.document('/book.txt').offset, exactPages[4].start);
-    expect(find.text('5페이지'), findsOneWidget);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
+      '5',
+    );
     expect(find.textContaining('%'), findsNothing);
     final selectedOffset = store.document('/book.txt').offset;
 
@@ -256,20 +259,47 @@ void main() {
     expect(store.document('/book.txt').offset, selectedOffset);
   });
 
-  testWidgets('하단과 햄버거 메뉴는 퍼센트 대신 현재 페이지를 표시한다', (tester) async {
+  testWidgets('하단은 숫자만 표시하고 햄버거 메뉴는 페이지 문구를 유지한다', (tester) async {
     final store = _MemoryStore()
       ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
     await _pumpReader(tester, store, _longText);
     await tester.pumpAndSettle();
 
-    expect(find.textContaining(RegExp(r'^\d+페이지$')), findsWidgets);
-    expect(find.textContaining('%'), findsNothing);
+    final indicator = tester.widget<Text>(
+      find.byKey(const Key('page-indicator')),
+    );
+    expect(indicator.data, matches(RegExp(r'^\d+$')));
+    expect(indicator.data, isNot(contains('페이지')));
 
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
 
     expect(find.textContaining(RegExp(r'^현재 \d+페이지$')), findsOneWidget);
-    expect(find.textContaining('%'), findsNothing);
+  });
+
+  testWidgets('표시 설정에서 현재와 전체 페이지 표시를 선택하고 저장한다', (tester) async {
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
+    await _pumpReader(tester, store, _longText);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(
+      find.byKey(const Key('page-display-current-total')),
+    );
+    await tester.tap(find.byKey(const Key('page-display-current-total')));
+    await tester.ensureVisible(find.text('적용'));
+    await tester.tap(find.text('적용'));
+    await tester.pumpAndSettle();
+
+    expect(store.data.settings.showTotalPages, isTrue);
+    final indicator = tester.widget<Text>(
+      find.byKey(const Key('page-indicator')),
+    );
+    expect(indicator.data, matches(RegExp(r'^\d+/\d+$')));
   });
 
   testWidgets('정확한 페이지 계산이 끝나면 추정값 대신 정확한 총 페이지 수를 쓴다', (tester) async {
@@ -438,7 +468,10 @@ void main() {
     await tester.pump();
     final exactRequestedOffset = exactPages[requestedPage - 1].start;
     expect(store.document('/book.txt').offset, exactRequestedOffset);
-    expect(find.text('$requestedPage페이지'), findsWidgets);
+    expect(
+      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
+      '$requestedPage',
+    );
 
     completion.complete(exactPages);
     await tester.pumpAndSettle();
@@ -1270,7 +1303,7 @@ void main() {
     expect(calls.any((call) => call.method == 'SystemNavigator.pop'), isTrue);
   });
 
-  testWidgets('북마크를 페이지 번호로 안내하고 표시한다', (tester) async {
+  testWidgets('북마크를 숫자 페이지로 안내하고 표시한다', (tester) async {
     final store = _MemoryStore();
     await _pumpReader(tester, store, _longText);
     await tester.pumpAndSettle();
@@ -1278,7 +1311,7 @@ void main() {
     await tester.tap(find.byIcon(Icons.bookmark_add_outlined));
     await tester.pump();
     expect(
-      find.textContaining(RegExp(r'^\d+페이지에 북마크를 저장했습니다\.$')),
+      find.textContaining(RegExp(r'^\d+에 북마크를 저장했습니다\.$')),
       findsOneWidget,
     );
 
@@ -1286,7 +1319,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('북마크'));
     await tester.pumpAndSettle();
-    expect(find.textContaining(RegExp(r'^\d+페이지$')), findsWidgets);
+    final bookmarkPage = tester.widget<Text>(
+      find.byKey(const Key('bookmark-page-0')),
+    );
+    expect(bookmarkPage.data, matches(RegExp(r'^\d+$')));
   });
 
   testWidgets('표시 설정은 단계 버튼으로 값과 과거 소수값을 조절한다', (tester) async {
