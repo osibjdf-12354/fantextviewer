@@ -51,6 +51,9 @@ class RgbColor {
 
 const _unchangedFontFileName = Object();
 
+int _paragraphIndentFromJson(Object? value) =>
+    value is int && value >= 0 && value <= 2 ? value : 0;
+
 class ReaderSettings {
   const ReaderSettings({
     this.mode = ReadingMode.scroll,
@@ -60,10 +63,11 @@ class ReaderSettings {
     this.fontSize = 20,
     this.lineHeight = 1.65,
     this.horizontalPadding = 20,
+    this.paragraphIndent = 0,
     this.keepAwake = false,
     this.showTotalPages = false,
     this.pageTurnDirection = PageTurnDirection.horizontal,
-  });
+  }) : assert(paragraphIndent >= 0 && paragraphIndent <= 2);
 
   final ReadingMode mode;
   final RgbColor background;
@@ -72,6 +76,7 @@ class ReaderSettings {
   final double fontSize;
   final double lineHeight;
   final double horizontalPadding;
+  final int paragraphIndent;
   final bool keepAwake;
   final bool showTotalPages;
   final PageTurnDirection pageTurnDirection;
@@ -84,6 +89,7 @@ class ReaderSettings {
     double? fontSize,
     double? lineHeight,
     double? horizontalPadding,
+    int? paragraphIndent,
     bool? keepAwake,
     bool? showTotalPages,
     PageTurnDirection? pageTurnDirection,
@@ -98,6 +104,7 @@ class ReaderSettings {
       fontSize: fontSize ?? this.fontSize,
       lineHeight: lineHeight ?? this.lineHeight,
       horizontalPadding: horizontalPadding ?? this.horizontalPadding,
+      paragraphIndent: paragraphIndent ?? this.paragraphIndent,
       keepAwake: keepAwake ?? this.keepAwake,
       showTotalPages: showTotalPages ?? this.showTotalPages,
       pageTurnDirection: pageTurnDirection ?? this.pageTurnDirection,
@@ -112,6 +119,7 @@ class ReaderSettings {
     'fontSize': fontSize,
     'lineHeight': lineHeight,
     'horizontalPadding': horizontalPadding,
+    'paragraphIndent': paragraphIndent,
     'keepAwake': keepAwake,
     'showTotalPages': showTotalPages,
     'pageTurnDirection': pageTurnDirection.name,
@@ -133,6 +141,7 @@ class ReaderSettings {
       fontSize: (json['fontSize'] as num? ?? 20).toDouble(),
       lineHeight: (json['lineHeight'] as num? ?? 1.65).toDouble(),
       horizontalPadding: (json['horizontalPadding'] as num? ?? 20).toDouble(),
+      paragraphIndent: _paragraphIndentFromJson(json['paragraphIndent']),
       keepAwake: json['keepAwake'] as bool? ?? false,
       showTotalPages: json['showTotalPages'] as bool? ?? false,
       pageTurnDirection: PageTurnDirection.values.firstWhere(

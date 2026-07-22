@@ -84,6 +84,24 @@ void main() {
     expect(enabled.copyWith(fontSize: 24).showTotalPages, isTrue);
   });
 
+  test(
+    'persists paragraph indentation and defaults invalid values to none',
+    () {
+      const settings = ReaderSettings(paragraphIndent: 2);
+
+      expect(settings.toJson()['paragraphIndent'], 2);
+      expect(ReaderSettings.fromJson(settings.toJson()).paragraphIndent, 2);
+      expect(ReaderSettings.fromJson(const {}).paragraphIndent, 0);
+      for (final invalid in [-1, 1.5, 3]) {
+        expect(
+          ReaderSettings.fromJson({'paragraphIndent': invalid}).paragraphIndent,
+          0,
+        );
+      }
+      expect(settings.copyWith(fontSize: 24).paragraphIndent, 2);
+    },
+  );
+
   test('persists page turn direction and defaults to horizontal', () {
     const settings = ReaderSettings(pageTurnDirection: PageTurnDirection.both);
 
