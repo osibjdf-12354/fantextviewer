@@ -244,6 +244,7 @@ class _ReaderViewState extends State<ReaderView> {
   bool _paginationComplete = false;
 
   List<TextPage>? get _completePages => _paginationComplete ? _pages : null;
+  bool get _isPaged => _settings.mode != ReadingMode.scroll;
 
   int get _fallbackCharactersPerPage {
     final size = _pageSize;
@@ -341,9 +342,7 @@ class _ReaderViewState extends State<ReaderView> {
             )
           : LayoutBuilder(
               builder: (context, constraints) {
-                final pageBottomInset = _settings.mode == ReadingMode.page
-                    ? _pageIndicatorInset
-                    : 0.0;
+                final pageBottomInset = _isPaged ? _pageIndicatorInset : 0.0;
                 final pageSize = Size(
                   math.max(
                     1,
@@ -352,7 +351,7 @@ class _ReaderViewState extends State<ReaderView> {
                   math.max(1, constraints.maxHeight - pageBottomInset),
                 );
                 _pageSize = pageSize;
-                if (_settings.mode == ReadingMode.page ||
+                if (_isPaged ||
                     widget.text.length <= _eagerScrollPaginationLimit ||
                     _paginationKey != null) {
                   _ensurePages(pageSize);
@@ -473,6 +472,7 @@ class _ReaderViewState extends State<ReaderView> {
           index: safeIndex,
           itemCount: pages.length,
           direction: _settings.pageTurnDirection,
+          tapOnly: _settings.mode == ReadingMode.tap,
           onPageChanged: (index) {
             final activePages = _pageWindow?.pages ?? _pages;
             if (!identical(activePages, pages)) return;
@@ -574,7 +574,7 @@ class _ReaderViewState extends State<ReaderView> {
           return;
         }
       }
-      if (_settings.mode == ReadingMode.page &&
+      if (_isPaged &&
           widget.text.length > _eagerScrollPaginationLimit &&
           _offset > 0) {
         await _jumpToPageNumber(_currentPageNumber, sourceOffset: _offset);
@@ -657,7 +657,7 @@ class _ReaderViewState extends State<ReaderView> {
       }
     }
     final pendingOffset = _pendingPageOffset;
-    if (_settings.mode == ReadingMode.page &&
+    if (_isPaged &&
         _pageWindow == null &&
         pendingOffset != null &&
         pages.isNotEmpty &&
@@ -1095,10 +1095,18 @@ class _ReaderViewState extends State<ReaderView> {
                         }),
                       ),
                       ChoiceChip(
-                        label: const Text('페이지 넘김'),
+                        label: const Text('스와이프'),
                         selected: draft.mode == ReadingMode.page,
                         onSelected: (_) => setSheetState(() {
                           draft = draft.copyWith(mode: ReadingMode.page);
+                        }),
+                      ),
+                      ChoiceChip(
+                        key: const Key('reading-mode-tap'),
+                        label: const Text('탭'),
+                        selected: draft.mode == ReadingMode.tap,
+                        onSelected: (_) => setSheetState(() {
+                          draft = draft.copyWith(mode: ReadingMode.tap);
                         }),
                       ),
                     ],
@@ -1145,6 +1153,13 @@ class _ReaderViewState extends State<ReaderView> {
                       ),
                     ],
                   ),
+                  if (draft.pageTurnDirection == PageTurnDirection.both) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      '둘 다 모드에서는 탭 영역이 위/아래로 나뉩니다.',
+                      style: Theme.of(sheetContext).textTheme.bodySmall,
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   const Text('페이지 표시'),
                   Wrap(

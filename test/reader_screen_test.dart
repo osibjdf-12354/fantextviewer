@@ -394,6 +394,60 @@ void main() {
     expect(find.text('second'), findsOneWidget);
   });
 
+  testWidgets('tap reading mode ignores swipes and advances by tap', (
+    tester,
+  ) async {
+    const text = 'firstsecondthird';
+    const pages = [
+      TextPage(start: 0, end: 5),
+      TextPage(start: 5, end: 11),
+      TextPage(start: 11, end: 16),
+    ];
+    final store = _MemoryStore()
+      ..updateSettings(
+        const ReaderSettings(
+          mode: ReadingMode.tap,
+          pageTurnDirection: PageTurnDirection.horizontal,
+        ),
+      );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async {
+                onBatch?.call(pages);
+                return pages;
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(PageTurnView), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(store.document('/book.txt').offset, 0);
+
+    final rect = tester.getRect(find.byType(PageTurnView));
+    await tester.tapAt(Offset(rect.right - 20, rect.center.dy));
+    await tester.pumpAndSettle();
+
+    expect(store.document('/book.txt').offset, 5);
+    expect(find.text('second'), findsOneWidget);
+  });
+
   testWidgets('정확한 페이지 계산이 끝나면 추정값 대신 정확한 총 페이지 수를 쓴다', (tester) async {
     final text = List.filled(1000, '가').join();
     const pages = [
@@ -1225,8 +1279,12 @@ void main() {
 
     await tester.tap(find.text('표시 설정'));
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('페이지 넘김'));
-    await tester.tap(find.text('페이지 넘김'));
+    expect(find.text('세로 스크롤'), findsOneWidget);
+    expect(find.text('스와이프'), findsOneWidget);
+    expect(find.text('탭'), findsOneWidget);
+    expect(find.text('페이지 넘김'), findsNothing);
+    await tester.ensureVisible(find.text('스와이프'));
+    await tester.tap(find.text('스와이프'));
     final red = find.byKey(const Key('background-red'));
     await tester.ensureVisible(red);
     await tester.enterText(red, '100');
@@ -1240,7 +1298,7 @@ void main() {
     expect(store.data.settings.background.green, 236);
   });
 
-  testWidgets('display settings persist all page turn directions', (
+  testWidgets('display settings persist tap mode and both direction helper', (
     tester,
   ) async {
     final store = _MemoryStore();
@@ -1255,19 +1313,25 @@ void main() {
     expect(find.text('좌우 넘김'), findsOneWidget);
     expect(find.text('상하 넘김'), findsOneWidget);
     expect(find.text('둘 다'), findsOneWidget);
+    expect(find.text('둘 다 모드에서는 탭 영역이 위/아래로 나뉩니다.'), findsNothing);
     expect(
       tester
           .widget<ChoiceChip>(find.byKey(const Key('page-turn-horizontal')))
           .selected,
       isTrue,
     );
-    await tester.ensureVisible(find.byKey(const Key('page-turn-vertical')));
-    await tester.tap(find.byKey(const Key('page-turn-vertical')));
+    await tester.ensureVisible(find.text('탭'));
+    await tester.tap(find.text('탭'));
+    await tester.ensureVisible(find.byKey(const Key('page-turn-both')));
+    await tester.tap(find.byKey(const Key('page-turn-both')));
+    await tester.pump();
+    expect(find.text('둘 다 모드에서는 탭 영역이 위/아래로 나뉩니다.'), findsOneWidget);
     await tester.ensureVisible(find.text('적용'));
     await tester.tap(find.text('적용'));
     await tester.pumpAndSettle();
 
-    expect(store.data.settings.pageTurnDirection, PageTurnDirection.vertical);
+    expect(store.data.settings.mode, ReadingMode.tap);
+    expect(store.data.settings.pageTurnDirection, PageTurnDirection.both);
   });
 
   test('같은 RGB 색의 명암비는 1이다', () {
