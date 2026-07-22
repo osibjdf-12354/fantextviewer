@@ -38,6 +38,7 @@ class _PageTurnViewState extends State<PageTurnView>
   Offset _lastPosition = Offset.zero;
   Duration _downTime = Duration.zero;
   Axis? _axis;
+  double _dragProgress = 0;
   VelocityTracker? _velocityTracker;
   bool _cancelled = false;
   Size _size = Size.zero;
@@ -63,6 +64,7 @@ class _PageTurnViewState extends State<PageTurnView>
     _progress.value = 0;
     _pointer = null;
     _axis = null;
+    _dragProgress = 0;
     _velocityTracker = null;
     _cancelled = false;
   }
@@ -78,6 +80,7 @@ class _PageTurnViewState extends State<PageTurnView>
     _lastPosition = event.position;
     _downTime = event.timeStamp;
     _axis = null;
+    _dragProgress = 0;
     _cancelled = false;
     _velocityTracker = VelocityTracker.withKind(event.kind)
       ..addPosition(event.timeStamp, event.position);
@@ -104,13 +107,17 @@ class _PageTurnViewState extends State<PageTurnView>
     final value = _axis == Axis.horizontal ? movement.dx : movement.dy;
     final extent = _extent(_axis!);
     if (extent == 0) return;
-    final progress = (_progress.value + value / extent).clamp(-1, 1);
-    final pageDelta = progress < 0 ? 1 : -1;
+    _dragProgress += value / extent;
+    if (_dragProgress == 0) {
+      _progress.value = 0;
+      return;
+    }
+    final pageDelta = _dragProgress < 0 ? 1 : -1;
     if (!_canTurn(pageDelta)) {
       _progress.value = 0;
       return;
     }
-    _progress.value = progress.toDouble();
+    _progress.value = _dragProgress.clamp(-1, 1).toDouble();
   }
 
   void _handleUp(PointerUpEvent event) {
@@ -122,6 +129,7 @@ class _PageTurnViewState extends State<PageTurnView>
     final axis = _axis;
     final velocity = _velocityTracker?.getVelocity().pixelsPerSecond;
     _pointer = null;
+    _dragProgress = 0;
     _velocityTracker = null;
     _cancelled = false;
 
@@ -153,6 +161,7 @@ class _PageTurnViewState extends State<PageTurnView>
   void _handleCancel(PointerCancelEvent event) {
     if (event.pointer != _pointer) return;
     _pointer = null;
+    _dragProgress = 0;
     _velocityTracker = null;
     _cancelled = false;
     unawaited(_animateBack());

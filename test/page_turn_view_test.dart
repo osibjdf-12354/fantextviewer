@@ -61,10 +61,27 @@ void main() {
     final rect = tester.getRect(find.byType(PageTurnView));
 
     await tester.tapAt(Offset(rect.center.dx, rect.top + 20));
-    await tester.drag(find.byType(PageTurnView), const Offset(300, 0));
+    await tester.pumpAndSettle();
+    expect(page.value, 0);
+
+    final partialReversal = await tester.startGesture(rect.center);
+    await partialReversal.moveBy(const Offset(300, 0));
+    await partialReversal.moveBy(const Offset(-200, 0));
+    await tester.pump();
+    final partialPosition = tester.getTopLeft(find.text('page 0')).dx;
+    await partialReversal.up();
     await tester.pumpAndSettle();
 
+    expect(partialPosition, closeTo(rect.left, 1));
     expect(page.value, 0);
+
+    final netInward = await tester.startGesture(rect.center);
+    await netInward.moveBy(const Offset(300, 0));
+    await netInward.moveBy(const Offset(-600, 0));
+    await netInward.up();
+    await tester.pumpAndSettle();
+
+    expect(page.value, 1);
   });
 
   testWidgets('keeps fractional drag progress through resize and movement', (
