@@ -75,6 +75,15 @@ void main() {
     expect(settings.copyWith(fontSize: 24).fontFileName, 'saved.otf');
   });
 
+  test('persists page indicator format and defaults to current page', () {
+    const enabled = ReaderSettings(showTotalPages: true);
+
+    expect(enabled.toJson()['showTotalPages'], true);
+    expect(ReaderSettings.fromJson(enabled.toJson()).showTotalPages, isTrue);
+    expect(ReaderSettings.fromJson(const {}).showTotalPages, isFalse);
+    expect(enabled.copyWith(fontSize: 24).showTotalPages, isTrue);
+  });
+
   test('progress updates do not notify home listeners', () {
     final store = AppStore(File('unused'));
     var notifications = 0;

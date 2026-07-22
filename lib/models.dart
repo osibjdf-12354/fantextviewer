@@ -59,6 +59,7 @@ class ReaderSettings {
     this.lineHeight = 1.65,
     this.horizontalPadding = 20,
     this.keepAwake = false,
+    this.showTotalPages = false,
   });
 
   final ReadingMode mode;
@@ -69,6 +70,7 @@ class ReaderSettings {
   final double lineHeight;
   final double horizontalPadding;
   final bool keepAwake;
+  final bool showTotalPages;
 
   ReaderSettings copyWith({
     ReadingMode? mode,
@@ -79,6 +81,7 @@ class ReaderSettings {
     double? lineHeight,
     double? horizontalPadding,
     bool? keepAwake,
+    bool? showTotalPages,
   }) {
     return ReaderSettings(
       mode: mode ?? this.mode,
@@ -91,6 +94,7 @@ class ReaderSettings {
       lineHeight: lineHeight ?? this.lineHeight,
       horizontalPadding: horizontalPadding ?? this.horizontalPadding,
       keepAwake: keepAwake ?? this.keepAwake,
+      showTotalPages: showTotalPages ?? this.showTotalPages,
     );
   }
 
@@ -103,6 +107,7 @@ class ReaderSettings {
     'lineHeight': lineHeight,
     'horizontalPadding': horizontalPadding,
     'keepAwake': keepAwake,
+    'showTotalPages': showTotalPages,
   };
 
   factory ReaderSettings.fromJson(Map<String, dynamic> json) {
@@ -122,6 +127,7 @@ class ReaderSettings {
       lineHeight: (json['lineHeight'] as num? ?? 1.65).toDouble(),
       horizontalPadding: (json['horizontalPadding'] as num? ?? 20).toDouble(),
       keepAwake: json['keepAwake'] as bool? ?? false,
+      showTotalPages: json['showTotalPages'] as bool? ?? false,
     );
   }
 }
