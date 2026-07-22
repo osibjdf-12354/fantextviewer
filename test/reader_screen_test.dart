@@ -292,9 +292,7 @@ void main() {
       find.byKey(const Key('page-display-current-total')),
     );
     await tester.tap(find.byKey(const Key('page-display-current-total')));
-    await tester.ensureVisible(find.text('적용'));
-    await tester.tap(find.text('적용'));
-    await tester.pumpAndSettle();
+    await _dismissSettings(tester);
 
     expect(store.data.settings.showTotalPages, isTrue);
     final indicator = tester.widget<Text>(
@@ -1288,10 +1286,7 @@ void main() {
     final red = find.byKey(const Key('background-red'));
     await tester.ensureVisible(red);
     await tester.enterText(red, '100');
-    await tester.ensureVisible(find.text('적용'));
-    await tester.tap(find.text('적용'));
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
+    await _dismissSettings(tester);
 
     expect(store.data.settings.mode, ReadingMode.page);
     expect(store.data.settings.background.red, 100);
@@ -1326,9 +1321,7 @@ void main() {
     await tester.tap(find.byKey(const Key('page-turn-both')));
     await tester.pump();
     expect(find.text('둘 다 모드에서는 탭 영역이 위/아래로 나뉩니다.'), findsOneWidget);
-    await tester.ensureVisible(find.text('적용'));
-    await tester.tap(find.text('적용'));
-    await tester.pumpAndSettle();
+    await _dismissSettings(tester);
 
     expect(store.data.settings.mode, ReadingMode.tap);
     expect(store.data.settings.pageTurnDirection, PageTurnDirection.both);
@@ -1531,13 +1524,79 @@ void main() {
     await tester.tap(find.byKey(const Key('font-size-increase')));
     await tester.tap(find.byKey(const Key('line-height-decrease')));
     await tester.tap(find.byKey(const Key('horizontal-padding-increase')));
-    await tester.ensureVisible(find.text('적용'));
-    await tester.tap(find.text('적용'));
-    await tester.pumpAndSettle();
+
+    expect(store.data.settings.fontSize, 20.4);
+    expect(store.data.settings.lineHeight, 1.66);
+    expect(store.data.settings.horizontalPadding, 20.4);
+    expect(find.text('적용'), findsNothing);
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const Key('font-size-increase')))
+          .visualDensity,
+      VisualDensity.compact,
+    );
+
+    await _dismissSettings(tester);
 
     expect(store.data.settings.fontSize, 21);
     expect(store.data.settings.lineHeight, 1.6);
     expect(store.data.settings.horizontalPadding, 21);
+  });
+
+  testWidgets('closing unchanged display settings is a no-op', (tester) async {
+    var notifications = 0;
+    var paginationCalls = 0;
+    const text = '본문';
+    final store = _MemoryStore()
+      ..updateSettings(
+        const ReaderSettings(
+          mode: ReadingMode.page,
+          fontSize: 20.4,
+          lineHeight: 1.66,
+          horizontalPadding: 20.4,
+        ),
+      )
+      ..addListener(() => notifications++);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async {
+                paginationCalls++;
+                final pages = [TextPage(start: 0, end: text.length)];
+                onBatch?.call(pages);
+                return pages;
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final callsBefore = paginationCalls;
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await tester.pumpAndSettle();
+    expect(find.text('적용'), findsNothing);
+
+    await _dismissSettings(tester);
+
+    expect(notifications, 0);
+    expect(paginationCalls, callsBefore);
   });
 
   testWidgets('단계 버튼은 최솟값과 최댓값을 넘지 않는다', (tester) async {
@@ -1622,9 +1681,7 @@ void main() {
       isNotNull,
     );
 
-    await tester.ensureVisible(find.text('적용'));
-    await tester.tap(find.text('적용'));
-    await tester.pumpAndSettle();
+    await _dismissSettings(tester);
 
     expect(store.data.settings.fontFileName, '나눔명조.ttf');
     expect(
@@ -1992,6 +2049,12 @@ Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {
       () => Future<void>.delayed(const Duration(milliseconds: 1)),
     );
   }
+  await tester.pumpAndSettle();
+}
+
+Future<void> _dismissSettings(WidgetTester tester) async {
+  expect(find.text('적용'), findsNothing);
+  await tester.binding.handlePopRoute();
   await tester.pumpAndSettle();
 }
 

@@ -43,9 +43,8 @@ void main() {
 
     expect(find.text('0~255'), findsOneWidget);
 
-    final apply = find.text('적용');
-    await tester.ensureVisible(apply);
-    await tester.tap(apply);
+    expect(find.text('적용'), findsNothing);
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
     expect(store.data.settings.background.red, 196);

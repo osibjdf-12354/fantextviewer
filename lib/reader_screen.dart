@@ -1053,16 +1053,7 @@ class _ReaderViewState extends State<ReaderView> {
         ? <ImportedFont>[]
         : await fontLibrary.listFonts();
     if (!mounted) return;
-    var draft = _settings.copyWith(
-      fontSize: _settings.fontSize.round().clamp(14, 36).toDouble(),
-      lineHeight: ((_settings.lineHeight * 10).round() / 10)
-          .clamp(1.2, 2.2)
-          .toDouble(),
-      horizontalPadding: _settings.horizontalPadding
-          .round()
-          .clamp(8, 40)
-          .toDouble(),
-    );
+    var draft = _settings;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -1452,16 +1443,6 @@ class _ReaderViewState extends State<ReaderView> {
                       draft = draft.copyWith(keepAwake: value);
                     }),
                   ),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton(
-                      onPressed: () {
-                        Navigator.pop(sheetContext);
-                        _applySettings(draft);
-                      },
-                      child: const Text('적용'),
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -1469,6 +1450,11 @@ class _ReaderViewState extends State<ReaderView> {
         },
       ),
     );
+    if (!mounted ||
+        jsonEncode(draft.toJson()) == jsonEncode(_settings.toJson())) {
+      return;
+    }
+    _applySettings(draft);
   }
 
   void _applySettings(ReaderSettings settings) {
@@ -1587,6 +1573,7 @@ class _SettingStepper extends StatelessWidget {
         IconButton(
           key: Key('$settingKey-decrease'),
           tooltip: '$label 줄이기',
+          visualDensity: VisualDensity.compact,
           onPressed: value <= min ? null : () => onChanged(_next(-step)),
           icon: const Icon(Icons.remove),
         ),
@@ -1600,6 +1587,7 @@ class _SettingStepper extends StatelessWidget {
         IconButton(
           key: Key('$settingKey-increase'),
           tooltip: '$label 늘리기',
+          visualDensity: VisualDensity.compact,
           onPressed: value >= max ? null : () => onChanged(_next(step)),
           icon: const Icon(Icons.add),
         ),
