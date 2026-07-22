@@ -23,6 +23,7 @@ typedef ReaderPaginator =
       required String text,
       required Size size,
       required TextStyle style,
+      required int paragraphIndent,
       ValueChanged<double>? onProgress,
       PaginationBatchCallback? onBatch,
       TextLayoutCallback? onLayout,
@@ -35,6 +36,7 @@ typedef ReaderWindowPaginator =
       required int startOffset,
       required Size size,
       required TextStyle style,
+      required int paragraphIndent,
       TextLayoutCallback? onLayout,
       bool Function()? isCancelled,
     });
@@ -437,7 +439,16 @@ class _ReaderViewState extends State<ReaderView> {
                 56,
               ),
               itemBuilder: (context, index) {
-                return SelectableText(_chunks[index].text, style: _textStyle);
+                final chunk = _chunks[index];
+                return SelectableText(
+                  formatParagraphIndentation(
+                    widget.text,
+                    start: chunk.start,
+                    end: chunk.end,
+                    paragraphIndent: _settings.paragraphIndent,
+                  ).text,
+                  style: _textStyle,
+                );
               },
             ),
           ),
@@ -501,7 +512,12 @@ class _ReaderViewState extends State<ReaderView> {
               child: Align(
                 alignment: Alignment.topLeft,
                 child: SelectableText(
-                  widget.text.substring(page.start, page.end),
+                  formatParagraphIndentation(
+                    widget.text,
+                    start: page.start,
+                    end: page.end,
+                    paragraphIndent: _settings.paragraphIndent,
+                  ).text,
                   style: _textStyle,
                 ),
               ),
@@ -538,7 +554,7 @@ class _ReaderViewState extends State<ReaderView> {
 
   void _ensurePages(Size size) {
     final key = jsonEncode({
-      'algorithm': 3,
+      'algorithm': 4,
       'path': widget.path,
       'fileSize': widget.fileSize,
       'modified': widget.modified?.toUtc().toIso8601String(),
@@ -551,6 +567,7 @@ class _ReaderViewState extends State<ReaderView> {
       'fontFileVersion': widget.fontLibrary?.versionFor(_settings.fontFileName),
       'lineHeight': _settings.lineHeight,
       'horizontalPadding': _settings.horizontalPadding,
+      'paragraphIndent': _settings.paragraphIndent,
     });
     if (_paginationKey == key) return;
     _paginationKey = key;
@@ -585,6 +602,7 @@ class _ReaderViewState extends State<ReaderView> {
         text: widget.text,
         size: size,
         style: _textStyle,
+        paragraphIndent: _settings.paragraphIndent,
         onProgress: (progress) {
           if (!mounted || generation != _paginationGeneration) return;
           setState(() => _paginationProgress = progress);
@@ -854,6 +872,7 @@ class _ReaderViewState extends State<ReaderView> {
       startOffset: startOffset,
       size: size,
       style: _textStyle,
+      paragraphIndent: _settings.paragraphIndent,
       isCancelled: cancelled,
     );
     if (cancelled()) return;
@@ -865,6 +884,7 @@ class _ReaderViewState extends State<ReaderView> {
         startOffset: targetOffset,
         size: size,
         style: _textStyle,
+        paragraphIndent: _settings.paragraphIndent,
         isCancelled: cancelled,
       );
     }
@@ -1366,6 +1386,37 @@ class _ReaderViewState extends State<ReaderView> {
                     onChanged: (value) => setSheetState(() {
                       draft = draft.copyWith(horizontalPadding: value);
                     }),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('문단 들여쓰기'),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        key: const Key('paragraph-indent-none'),
+                        label: const Text('없음'),
+                        selected: draft.paragraphIndent == 0,
+                        onSelected: (_) => setSheetState(() {
+                          draft = draft.copyWith(paragraphIndent: 0);
+                        }),
+                      ),
+                      ChoiceChip(
+                        key: const Key('paragraph-indent-one'),
+                        label: const Text('한 글자'),
+                        selected: draft.paragraphIndent == 1,
+                        onSelected: (_) => setSheetState(() {
+                          draft = draft.copyWith(paragraphIndent: 1);
+                        }),
+                      ),
+                      ChoiceChip(
+                        key: const Key('paragraph-indent-two'),
+                        label: const Text('두 글자'),
+                        selected: draft.paragraphIndent == 2,
+                        onSelected: (_) => setSheetState(() {
+                          draft = draft.copyWith(paragraphIndent: 2);
+                        }),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   const Text('색상 템플릿'),

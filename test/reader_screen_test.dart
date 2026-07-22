@@ -102,6 +102,71 @@ void main() {
     expect(cache.loadSignatures.toSet(), hasLength(2));
   });
 
+  testWidgets('문단 들여쓰기별 페이지 캐시와 페이지 본문을 분리한다', (tester) async {
+    const text = '첫 문단\n둘째 문단';
+    final cache = _MemoryPageIndexCache();
+
+    Future<void> pumpIndent(int paragraphIndent) async {
+      final store = _MemoryStore()
+        ..updateSettings(
+          ReaderSettings(
+            mode: ReadingMode.page,
+            paragraphIndent: paragraphIndent,
+          ),
+        );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderView(
+            key: ValueKey(paragraphIndent),
+            path: '/book.txt',
+            title: 'book.txt',
+            text: text,
+            encoding: TextEncoding.utf8,
+            store: store,
+            pageIndexCache: cache,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pumpIndent(0);
+    await pumpIndent(2);
+
+    expect(cache.loadSignatures.toSet(), hasLength(2));
+    expect(
+      tester.widget<SelectableText>(find.byType(SelectableText)).data,
+      '　　첫 문단\n　　둘째 문단',
+    );
+  });
+
+  testWidgets('표시 설정에서 문단 들여쓰기를 닫을 때 적용한다', (tester) async {
+    final store = _MemoryStore();
+    await _pumpReader(tester, store, '첫 문단\n둘째 문단');
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await tester.pumpAndSettle();
+
+    await tester.ensureVisible(find.byKey(const Key('paragraph-indent-two')));
+    expect(
+      tester
+          .widget<ChoiceChip>(find.byKey(const Key('paragraph-indent-none')))
+          .selected,
+      isTrue,
+    );
+    await tester.tap(find.byKey(const Key('paragraph-indent-two')));
+    expect(store.data.settings.paragraphIndent, 0);
+
+    await _dismissSettings(tester);
+
+    expect(store.data.settings.paragraphIndent, 2);
+    expect(
+      tester.widget<SelectableText>(find.byType(SelectableText)).data,
+      '　　첫 문단\n　　둘째 문단',
+    );
+  });
+
   testWidgets('late wakelock enable is disabled after reader disposal', (
     tester,
   ) async {
@@ -150,6 +215,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -205,6 +271,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -320,6 +387,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -372,6 +440,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -421,6 +490,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -467,6 +537,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -508,6 +579,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -580,6 +652,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -647,6 +720,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -698,6 +772,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -745,6 +820,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -785,6 +861,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -832,6 +909,7 @@ void main() {
       required String text,
       required Size size,
       required TextStyle style,
+      required int paragraphIndent,
       ValueChanged<double>? onProgress,
       PaginationBatchCallback? onBatch,
       TextLayoutCallback? onLayout,
@@ -889,6 +967,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -948,6 +1027,7 @@ void main() {
                   required text,
                   required size,
                   required style,
+                  required paragraphIndent,
                   onProgress,
                   onBatch,
                   onLayout,
@@ -959,6 +1039,7 @@ void main() {
                   required startOffset,
                   required size,
                   required style,
+                  required paragraphIndent,
                   onLayout,
                   isCancelled,
                 }) async {
@@ -1014,6 +1095,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -1072,6 +1154,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -1137,6 +1220,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -1151,6 +1235,7 @@ void main() {
                 required startOffset,
                 required size,
                 required style,
+                required paragraphIndent,
                 onLayout,
                 isCancelled,
               }) {
@@ -1219,6 +1304,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
@@ -1571,6 +1657,7 @@ void main() {
                 required text,
                 required size,
                 required style,
+                required paragraphIndent,
                 onProgress,
                 onBatch,
                 onLayout,
