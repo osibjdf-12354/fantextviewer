@@ -1,5 +1,7 @@
 enum ReadingMode { scroll, page }
 
+enum PageTurnDirection { horizontal, vertical, both }
+
 class RgbColor {
   const RgbColor(this.red, this.green, this.blue)
     : assert(red >= 0 && red <= 255),
@@ -60,6 +62,7 @@ class ReaderSettings {
     this.horizontalPadding = 20,
     this.keepAwake = false,
     this.showTotalPages = false,
+    this.pageTurnDirection = PageTurnDirection.horizontal,
   });
 
   final ReadingMode mode;
@@ -71,6 +74,7 @@ class ReaderSettings {
   final double horizontalPadding;
   final bool keepAwake;
   final bool showTotalPages;
+  final PageTurnDirection pageTurnDirection;
 
   ReaderSettings copyWith({
     ReadingMode? mode,
@@ -82,6 +86,7 @@ class ReaderSettings {
     double? horizontalPadding,
     bool? keepAwake,
     bool? showTotalPages,
+    PageTurnDirection? pageTurnDirection,
   }) {
     return ReaderSettings(
       mode: mode ?? this.mode,
@@ -95,6 +100,7 @@ class ReaderSettings {
       horizontalPadding: horizontalPadding ?? this.horizontalPadding,
       keepAwake: keepAwake ?? this.keepAwake,
       showTotalPages: showTotalPages ?? this.showTotalPages,
+      pageTurnDirection: pageTurnDirection ?? this.pageTurnDirection,
     );
   }
 
@@ -108,6 +114,7 @@ class ReaderSettings {
     'horizontalPadding': horizontalPadding,
     'keepAwake': keepAwake,
     'showTotalPages': showTotalPages,
+    'pageTurnDirection': pageTurnDirection.name,
   };
 
   factory ReaderSettings.fromJson(Map<String, dynamic> json) {
@@ -128,6 +135,10 @@ class ReaderSettings {
       horizontalPadding: (json['horizontalPadding'] as num? ?? 20).toDouble(),
       keepAwake: json['keepAwake'] as bool? ?? false,
       showTotalPages: json['showTotalPages'] as bool? ?? false,
+      pageTurnDirection: PageTurnDirection.values.firstWhere(
+        (direction) => direction.name == json['pageTurnDirection'],
+        orElse: () => PageTurnDirection.horizontal,
+      ),
     );
   }
 }

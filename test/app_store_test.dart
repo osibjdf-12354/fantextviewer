@@ -84,6 +84,24 @@ void main() {
     expect(enabled.copyWith(fontSize: 24).showTotalPages, isTrue);
   });
 
+  test('persists page turn direction and defaults to horizontal', () {
+    const settings = ReaderSettings(pageTurnDirection: PageTurnDirection.both);
+
+    expect(settings.toJson()['pageTurnDirection'], 'both');
+    expect(
+      ReaderSettings.fromJson(settings.toJson()).pageTurnDirection,
+      PageTurnDirection.both,
+    );
+    expect(
+      ReaderSettings.fromJson(const {}).pageTurnDirection,
+      PageTurnDirection.horizontal,
+    );
+    expect(
+      settings.copyWith(fontSize: 24).pageTurnDirection,
+      PageTurnDirection.both,
+    );
+  });
+
   test('progress updates do not notify home listeners', () {
     final store = AppStore(File('unused'));
     var notifications = 0;
