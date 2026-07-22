@@ -10,6 +10,7 @@ import 'package:geulbom/app_store.dart';
 import 'package:geulbom/font_library.dart';
 import 'package:geulbom/models.dart';
 import 'package:geulbom/page_index_cache.dart';
+import 'package:geulbom/page_turn_view.dart';
 import 'package:geulbom/reader_screen.dart';
 import 'package:geulbom/text_document.dart';
 import 'package:geulbom/text_paginator.dart';
@@ -300,6 +301,55 @@ void main() {
       find.byKey(const Key('page-indicator')),
     );
     expect(indicator.data, matches(RegExp(r'^\d+/\d+$')));
+  });
+
+  testWidgets('reader applies vertical page turns to document progress', (
+    tester,
+  ) async {
+    const text = 'firstsecondthird';
+    const pages = [
+      TextPage(start: 0, end: 5),
+      TextPage(start: 5, end: 11),
+      TextPage(start: 11, end: 16),
+    ];
+    final store = _MemoryStore()
+      ..updateSettings(
+        const ReaderSettings(
+          mode: ReadingMode.page,
+          pageTurnDirection: PageTurnDirection.vertical,
+        ),
+      );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async {
+                onBatch?.call(pages);
+                return pages;
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.drag(find.byType(PageTurnView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+
+    expect(store.document('/book.txt').offset, 5);
+    expect(find.text('second'), findsOneWidget);
   });
 
   testWidgets('정확한 페이지 계산이 끝나면 추정값 대신 정확한 총 페이지 수를 쓴다', (tester) async {
@@ -889,9 +939,7 @@ void main() {
     await tester.pump();
 
     expect(
-      (tester.widget<PageView>(find.byType(PageView)).childrenDelegate
-              as SliverChildBuilderDelegate)
-          .childCount,
+      tester.widget<PageTurnView>(find.byType(PageTurnView)).itemCount,
       pages.length,
     );
 
@@ -899,13 +947,14 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    final pageView = tester.widget<PageView>(find.byType(PageView));
-    expect(
-      (pageView.childrenDelegate as SliverChildBuilderDelegate).childCount,
-      pages.length,
-    );
-    pageView.controller!.jumpToPage(pages.length - 1);
+    final pager = tester.widget<PageTurnView>(find.byType(PageTurnView));
+    expect(pager.itemCount, pages.length);
+    pager.onPageChanged(pages.length - 1);
     await tester.pumpAndSettle();
+    expect(
+      tester.widget<PageTurnView>(find.byType(PageTurnView)).index,
+      pages.length - 1,
+    );
     expect(find.text(text.substring(text.length - 1)), findsOneWidget);
   });
 
@@ -1107,7 +1156,7 @@ void main() {
     ]);
     await tester.pumpAndSettle();
 
-    expect(tester.widget<PageView>(find.byType(PageView)).controller?.page, 2);
+    expect(tester.widget<PageTurnView>(find.byType(PageTurnView)).index, 2);
     expect(find.text('찾을본문'), findsOneWidget);
   });
 
@@ -1147,6 +1196,36 @@ void main() {
     expect(store.data.settings.mode, ReadingMode.page);
     expect(store.data.settings.background.red, 100);
     expect(store.data.settings.background.green, 236);
+  });
+
+  testWidgets('display settings persist all page turn directions', (
+    tester,
+  ) async {
+    final store = _MemoryStore();
+    await _pumpReader(tester, store, _longText);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('좌우 넘김'), findsOneWidget);
+    expect(find.text('상하 넘김'), findsOneWidget);
+    expect(find.text('둘 다'), findsOneWidget);
+    expect(
+      tester
+          .widget<ChoiceChip>(find.byKey(const Key('page-turn-horizontal')))
+          .selected,
+      isTrue,
+    );
+    await tester.ensureVisible(find.byKey(const Key('page-turn-vertical')));
+    await tester.tap(find.byKey(const Key('page-turn-vertical')));
+    await tester.ensureVisible(find.text('적용'));
+    await tester.tap(find.text('적용'));
+    await tester.pumpAndSettle();
+
+    expect(store.data.settings.pageTurnDirection, PageTurnDirection.vertical);
   });
 
   test('같은 RGB 색의 명암비는 1이다', () {

@@ -14,6 +14,7 @@ import 'app_store.dart';
 import 'font_library.dart';
 import 'models.dart';
 import 'page_index_cache.dart';
+import 'page_turn_view.dart';
 import 'text_document.dart';
 import 'text_paginator.dart';
 
@@ -227,8 +228,7 @@ class _ReaderViewState extends State<ReaderView> {
   final _itemPositionsListener = ItemPositionsListener.create();
   Timer? _saveTimer;
   List<TextPage>? _pages;
-  PageController? _pageController;
-  int? _pageControllerInitialOffset;
+  int? _pageIndex;
   int? _pendingTargetPage;
   int? _pendingPageOffset;
   int? _pendingScrollOffset;
@@ -308,7 +308,6 @@ class _ReaderViewState extends State<ReaderView> {
   void dispose() {
     _itemPositionsListener.itemPositions.removeListener(_recordScrollPosition);
     _saveTimer?.cancel();
-    _pageController?.dispose();
     unawaited(widget.store.save());
     unawaited(WakelockPlus.disable());
     super.dispose();
@@ -448,8 +447,8 @@ class _ReaderViewState extends State<ReaderView> {
   Widget _buildPageReader() {
     final window = _pageWindow;
     final pages = window?.pages ?? _pages;
-    final controller = _pageController;
-    if (pages == null || controller == null) {
+    final pageIndex = _pageIndex;
+    if (pages == null || pageIndex == null || pages.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -463,53 +462,43 @@ class _ReaderViewState extends State<ReaderView> {
         ),
       );
     }
+    final safeIndex = pageIndex.clamp(0, pages.length - 1).toInt();
     return Stack(
       children: [
-        NotificationListener<UserScrollNotification>(
-          onNotification: (notification) {
-            if (notification.direction != ScrollDirection.idle) {
-              _registerManualNavigation();
-            }
-            return false;
-          },
-          child: PageView.builder(
-            key: ObjectKey(controller),
-            controller: controller,
-            itemCount: pages.length,
-            onPageChanged: (index) {
-              if (!identical(controller, _pageController)) return;
-              final initialOffset = _pageControllerInitialOffset;
-              _pageControllerInitialOffset = null;
-              final nextOffset =
-                  initialOffset != null &&
-                      pageForOffset(pages, initialOffset) == index
-                  ? initialOffset
-                  : pages[index].start;
+        PageTurnView(
+          index: safeIndex,
+          itemCount: pages.length,
+          direction: _settings.pageTurnDirection,
+          onPageChanged: (index) {
+            final activePages = _pageWindow?.pages ?? _pages;
+            if (!identical(activePages, pages)) return;
+            _registerManualNavigation();
+            final nextOffset = pages[index].start;
+            setState(() {
+              _pageIndex = index;
+              _displayPageNumber = window == null
+                  ? index + 1
+                  : window.firstPage + index;
               _pendingPageOffset = null;
               _pendingScrollOffset = null;
-              setState(() {
-                _displayPageNumber = window == null
-                    ? index + 1
-                    : window.firstPage + index;
-                _setOffset(nextOffset);
-              });
-            },
-            itemBuilder: (context, index) {
-              final page = pages[index];
-              return Padding(
-                padding: EdgeInsets.symmetric(
-                  horizontal: _settings.horizontalPadding,
+              _setOffset(nextOffset);
+            });
+          },
+          itemBuilder: (context, index) {
+            final page = pages[index];
+            return Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: _settings.horizontalPadding,
+              ),
+              child: Align(
+                alignment: Alignment.topLeft,
+                child: SelectableText(
+                  widget.text.substring(page.start, page.end),
+                  style: _textStyle,
                 ),
-                child: Align(
-                  alignment: Alignment.topLeft,
-                  child: SelectableText(
-                    widget.text.substring(page.start, page.end),
-                    style: _textStyle,
-                  ),
-                ),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
         _buildPageIndicator(),
       ],
@@ -562,9 +551,7 @@ class _ReaderViewState extends State<ReaderView> {
     _pages = null;
     _paginationProgress = 0;
     _paginationComplete = false;
-    _pageController?.dispose();
-    _pageController = null;
-    _pageControllerInitialOffset = null;
+    _pageIndex = null;
     final generation = ++_paginationGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final cache = widget.pageIndexCache;
@@ -626,18 +613,13 @@ class _ReaderViewState extends State<ReaderView> {
     if (complete) {
       _pageWindowGeneration++;
       _pageWindow = null;
-      _pageController?.dispose();
-      _pageController = pages.isEmpty
-          ? null
-          : PageController(initialPage: initialPage);
-      _pageControllerInitialOffset = pages.isEmpty ? null : _offset;
+      _pageIndex = pages.isEmpty ? null : initialPage;
       _displayPageNumber = initialPage + 1;
     } else if (_pageWindow == null &&
-        _pageController == null &&
+        _pageIndex == null &&
         pages.isNotEmpty &&
         pages.last.end > _offset) {
-      _pageController = PageController(initialPage: initialPage);
-      _pageControllerInitialOffset = _offset;
+      _pageIndex = initialPage;
     }
     setState(() {
       _pages = pages;
@@ -672,17 +654,14 @@ class _ReaderViewState extends State<ReaderView> {
         pendingOffset != null &&
         pages.isNotEmpty &&
         (complete || pendingOffset < pages.last.end)) {
-      final controller = _pageController;
       final page = pageForOffset(pages, pendingOffset);
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted ||
-            _pendingPageOffset != pendingOffset ||
-            !identical(controller, _pageController) ||
-            controller?.hasClients != true) {
-          return;
-        }
-        _pendingPageOffset = null;
-        controller!.jumpToPage(page);
+        if (!mounted || _pendingPageOffset != pendingOffset) return;
+        setState(() {
+          _pendingPageOffset = null;
+          _pageIndex = page;
+          _displayPageNumber = page + 1;
+        });
       });
     }
   }
@@ -757,9 +736,12 @@ class _ReaderViewState extends State<ReaderView> {
     final window = _pageWindow;
     if (window != null) {
       if (_offset >= window.pages.first.start &&
-          _offset < window.pages.last.end &&
-          _pageController?.hasClients == true) {
-        _pageController!.jumpToPage(pageForOffset(window.pages, _offset));
+          _offset < window.pages.last.end) {
+        final page = pageForOffset(window.pages, _offset);
+        setState(() {
+          _pageIndex = page;
+          _displayPageNumber = window.firstPage + page;
+        });
       } else {
         final total = _displayTotalPages;
         unawaited(
@@ -778,13 +760,12 @@ class _ReaderViewState extends State<ReaderView> {
     final pages = _pages;
     if (pages != null &&
         pages.isNotEmpty &&
-        (_paginationComplete || _offset < pages.last.end) &&
-        _pageController != null) {
+        (_paginationComplete || _offset < pages.last.end)) {
       final page = pageForOffset(pages, _offset);
-      _pageController?.dispose();
-      _pageController = PageController(initialPage: page);
-      _pageControllerInitialOffset = _offset;
-      _displayPageNumber = page + 1;
+      setState(() {
+        _pageIndex = page;
+        _displayPageNumber = page + 1;
+      });
     } else {
       final totalPages = _displayTotalPages;
       unawaited(
@@ -893,11 +874,9 @@ class _ReaderViewState extends State<ReaderView> {
       pages = pages.sublist(0, remainingPages);
     }
 
-    _pageController?.dispose();
-    _pageController = PageController(initialPage: localPage);
-    _pageControllerInitialOffset = sourceOffset;
     setState(() {
       _pageWindow = (pages: pages, firstPage: firstPage);
+      _pageIndex = localPage;
       _displayPageNumber = page;
       _pendingPageOffset = null;
       _setOffset(sourceOffset);
@@ -1112,6 +1091,48 @@ class _ReaderViewState extends State<ReaderView> {
                         selected: draft.mode == ReadingMode.page,
                         onSelected: (_) => setSheetState(() {
                           draft = draft.copyWith(mode: ReadingMode.page);
+                        }),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('페이지 넘김 방향'),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        key: const Key('page-turn-horizontal'),
+                        label: const Text('좌우 넘김'),
+                        selected:
+                            draft.pageTurnDirection ==
+                            PageTurnDirection.horizontal,
+                        onSelected: (_) => setSheetState(() {
+                          draft = draft.copyWith(
+                            pageTurnDirection: PageTurnDirection.horizontal,
+                          );
+                        }),
+                      ),
+                      ChoiceChip(
+                        key: const Key('page-turn-vertical'),
+                        label: const Text('상하 넘김'),
+                        selected:
+                            draft.pageTurnDirection ==
+                            PageTurnDirection.vertical,
+                        onSelected: (_) => setSheetState(() {
+                          draft = draft.copyWith(
+                            pageTurnDirection: PageTurnDirection.vertical,
+                          );
+                        }),
+                      ),
+                      ChoiceChip(
+                        key: const Key('page-turn-both'),
+                        label: const Text('둘 다'),
+                        selected:
+                            draft.pageTurnDirection == PageTurnDirection.both,
+                        onSelected: (_) => setSheetState(() {
+                          draft = draft.copyWith(
+                            pageTurnDirection: PageTurnDirection.both,
+                          );
                         }),
                       ),
                     ],
@@ -1433,14 +1454,12 @@ class _ReaderViewState extends State<ReaderView> {
     _pageWindowGeneration++;
     _pendingPageOffset = null;
     _pendingScrollOffset = null;
-    _pageController?.dispose();
-    _pageController = null;
-    _pageControllerInitialOffset = null;
     setState(() {
       _settings = settings;
       _paginationKey = null;
       _pages = null;
       _pageWindow = null;
+      _pageIndex = null;
       _paginationComplete = false;
     });
     widget.store.updateSettings(settings);
