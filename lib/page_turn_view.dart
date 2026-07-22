@@ -1,0 +1,284 @@
+import 'dart:async';
+
+import 'package:flutter/gestures.dart';
+import 'package:flutter/widgets.dart';
+
+import 'models.dart';
+
+class PageTurnView extends StatefulWidget {
+  const PageTurnView({
+    super.key,
+    required this.index,
+    required this.itemCount,
+    required this.direction,
+    required this.onPageChanged,
+    required this.itemBuilder,
+  });
+
+  final int index;
+  final int itemCount;
+  final PageTurnDirection direction;
+  final ValueChanged<int> onPageChanged;
+  final IndexedWidgetBuilder itemBuilder;
+
+  @override
+  State<PageTurnView> createState() => _PageTurnViewState();
+}
+
+class _PageTurnViewState extends State<PageTurnView>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _offset = AnimationController.unbounded(
+    vsync: this,
+  );
+  int? _pointer;
+  Offset _downPosition = Offset.zero;
+  Duration _downTime = Duration.zero;
+  Axis? _axis;
+  VelocityTracker? _velocityTracker;
+  bool _cancelled = false;
+  Size _size = Size.zero;
+
+  @override
+  void didUpdateWidget(PageTurnView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index != widget.index ||
+        oldWidget.itemCount != widget.itemCount ||
+        oldWidget.direction != widget.direction) {
+      _resetInteraction();
+    }
+  }
+
+  @override
+  void dispose() {
+    _offset.dispose();
+    super.dispose();
+  }
+
+  void _resetInteraction() {
+    _offset.stop();
+    _offset.value = 0;
+    _pointer = null;
+    _axis = null;
+    _velocityTracker = null;
+    _cancelled = false;
+  }
+
+  void _handleDown(PointerDownEvent event) {
+    if (_pointer != null) {
+      _cancelled = true;
+      return;
+    }
+    if (_offset.isAnimating) return;
+    _pointer = event.pointer;
+    _downPosition = event.localPosition;
+    _downTime = event.timeStamp;
+    _axis = null;
+    _cancelled = false;
+    _velocityTracker = VelocityTracker.withKind(event.kind)
+      ..addPosition(event.timeStamp, event.localPosition);
+  }
+
+  void _handleMove(PointerMoveEvent event) {
+    if (event.pointer != _pointer || _cancelled) return;
+    _velocityTracker?.addPosition(event.timeStamp, event.localPosition);
+    final delta = event.localPosition - _downPosition;
+    if (_axis == null) {
+      if (event.timeStamp - _downTime >= kLongPressTimeout) {
+        _cancelled = true;
+        return;
+      }
+      if (delta.distance < kTouchSlop) return;
+      _axis = _chooseAxis(delta);
+      if (_axis == null) {
+        _cancelled = true;
+        return;
+      }
+    }
+    final value = _axis == Axis.horizontal ? delta.dx : delta.dy;
+    final pageDelta = value < 0 ? 1 : -1;
+    if (!_canTurn(pageDelta)) {
+      _offset.value = 0;
+      return;
+    }
+    final extent = _extent(_axis!);
+    _offset.value = value.clamp(-extent, extent).toDouble();
+  }
+
+  void _handleUp(PointerUpEvent event) {
+    if (event.pointer != _pointer) return;
+    _velocityTracker?.addPosition(event.timeStamp, event.localPosition);
+    final elapsed = event.timeStamp - _downTime;
+    final distance = (event.localPosition - _downPosition).distance;
+    final cancelled = _cancelled;
+    final axis = _axis;
+    final velocity = _velocityTracker?.getVelocity().pixelsPerSecond;
+    _pointer = null;
+    _velocityTracker = null;
+    _cancelled = false;
+
+    if (cancelled) {
+      unawaited(_animateBack());
+      return;
+    }
+    if (axis == null) {
+      if (elapsed < kLongPressTimeout && distance < kTouchSlop) {
+        final pageDelta = event.localPosition.dy < _size.height / 2 ? -1 : 1;
+        unawaited(_animateTurn(pageDelta, _tapAxis));
+      }
+      return;
+    }
+
+    final axisVelocity = axis == Axis.horizontal ? velocity?.dx : velocity?.dy;
+    final extent = _extent(axis);
+    final moved = _offset.value.abs() >= extent * .2;
+    final flung =
+        axisVelocity != null &&
+        axisVelocity.abs() >= 600 &&
+        axisVelocity.sign == _offset.value.sign;
+    if (!moved && !flung) {
+      unawaited(_animateBack());
+      return;
+    }
+    unawaited(_animateTurn(_offset.value < 0 ? 1 : -1, axis));
+  }
+
+  void _handleCancel(PointerCancelEvent event) {
+    if (event.pointer != _pointer) return;
+    _pointer = null;
+    _velocityTracker = null;
+    _cancelled = false;
+    unawaited(_animateBack());
+  }
+
+  Axis? _chooseAxis(Offset delta) {
+    return switch (widget.direction) {
+      PageTurnDirection.horizontal =>
+        delta.dx.abs() >= delta.dy.abs() ? Axis.horizontal : null,
+      PageTurnDirection.vertical =>
+        delta.dy.abs() >= delta.dx.abs() ? Axis.vertical : null,
+      PageTurnDirection.both =>
+        delta.dx.abs() >= delta.dy.abs() ? Axis.horizontal : Axis.vertical,
+    };
+  }
+
+  Axis get _tapAxis => widget.direction == PageTurnDirection.horizontal
+      ? Axis.horizontal
+      : Axis.vertical;
+
+  double _extent(Axis axis) =>
+      axis == Axis.horizontal ? _size.width : _size.height;
+
+  bool _canTurn(int pageDelta) {
+    final target = widget.index + pageDelta;
+    return target >= 0 && target < widget.itemCount;
+  }
+
+  Future<void> _animateTurn(int pageDelta, Axis axis) async {
+    if (_offset.isAnimating) return;
+    if (!_canTurn(pageDelta)) {
+      await _animateBack();
+      return;
+    }
+    setState(() => _axis = axis);
+    final extent = _extent(axis);
+    final target = pageDelta > 0 ? -extent : extent;
+    final fraction = ((target - _offset.value).abs() / extent).clamp(.25, 1.0);
+    await _offset.animateTo(
+      target,
+      duration: Duration(milliseconds: (180 * fraction).round()),
+      curve: Curves.easeOutCubic,
+    );
+    if (!mounted) return;
+    widget.onPageChanged(widget.index + pageDelta);
+    if (!mounted) return;
+    _offset.value = 0;
+    setState(() => _axis = null);
+  }
+
+  Future<void> _animateBack() async {
+    if (_offset.value != 0) {
+      await _offset.animateTo(
+        0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOutCubic,
+      );
+    }
+    if (mounted) setState(() => _axis = null);
+  }
+
+  Offset _translation(Axis axis, double value) =>
+      axis == Axis.horizontal ? Offset(value, 0) : Offset(0, value);
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _size = constraints.biggest;
+        final previous = widget.index > 0
+            ? KeyedSubtree(
+                key: ValueKey(widget.index - 1),
+                child: widget.itemBuilder(context, widget.index - 1),
+              )
+            : null;
+        final current = KeyedSubtree(
+          key: ValueKey(widget.index),
+          child: widget.itemBuilder(context, widget.index),
+        );
+        final next = widget.index + 1 < widget.itemCount
+            ? KeyedSubtree(
+                key: ValueKey(widget.index + 1),
+                child: widget.itemBuilder(context, widget.index + 1),
+              )
+            : null;
+        return Semantics(
+          value: '${widget.index + 1}',
+          increasedValue: next == null ? null : '${widget.index + 2}',
+          decreasedValue: previous == null ? null : '${widget.index}',
+          onIncrease: next == null
+              ? null
+              : () => unawaited(_animateTurn(1, _tapAxis)),
+          onDecrease: previous == null
+              ? null
+              : () => unawaited(_animateTurn(-1, _tapAxis)),
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: _handleDown,
+            onPointerMove: _handleMove,
+            onPointerUp: _handleUp,
+            onPointerCancel: _handleCancel,
+            child: ClipRect(
+              child: AnimatedBuilder(
+                animation: _offset,
+                builder: (context, _) {
+                  final axis = _axis ?? _tapAxis;
+                  final extent = _extent(axis);
+                  final value = _offset.value;
+                  final adjacent = value < 0
+                      ? next
+                      : value > 0
+                      ? previous
+                      : null;
+                  final adjacentStart = value < 0 ? extent : -extent;
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (adjacent != null)
+                        Transform.translate(
+                          offset: _translation(axis, adjacentStart + value),
+                          child: adjacent,
+                        ),
+                      Transform.translate(
+                        offset: _translation(axis, value),
+                        child: current,
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
