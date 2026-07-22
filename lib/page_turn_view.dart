@@ -27,8 +27,11 @@ class PageTurnView extends StatefulWidget {
 
 class _PageTurnViewState extends State<PageTurnView>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _offset = AnimationController.unbounded(
+  late final AnimationController _progress = AnimationController(
     vsync: this,
+    value: 0,
+    lowerBound: -1,
+    upperBound: 1,
   );
   int? _pointer;
   Offset _downPosition = Offset.zero;
@@ -50,13 +53,13 @@ class _PageTurnViewState extends State<PageTurnView>
 
   @override
   void dispose() {
-    _offset.dispose();
+    _progress.dispose();
     super.dispose();
   }
 
   void _resetInteraction() {
-    _offset.stop();
-    _offset.value = 0;
+    _progress.stop();
+    _progress.value = 0;
     _pointer = null;
     _axis = null;
     _velocityTracker = null;
@@ -68,7 +71,7 @@ class _PageTurnViewState extends State<PageTurnView>
       _cancelled = true;
       return;
     }
-    if (_offset.isAnimating) return;
+    if (_progress.isAnimating) return;
     _pointer = event.pointer;
     _downPosition = event.localPosition;
     _downTime = event.timeStamp;
@@ -97,11 +100,12 @@ class _PageTurnViewState extends State<PageTurnView>
     final value = _axis == Axis.horizontal ? delta.dx : delta.dy;
     final pageDelta = value < 0 ? 1 : -1;
     if (!_canTurn(pageDelta)) {
-      _offset.value = 0;
+      _progress.value = 0;
       return;
     }
     final extent = _extent(_axis!);
-    _offset.value = value.clamp(-extent, extent).toDouble();
+    if (extent == 0) return;
+    _progress.value = (value / extent).clamp(-1, 1).toDouble();
   }
 
   void _handleUp(PointerUpEvent event) {
@@ -129,17 +133,16 @@ class _PageTurnViewState extends State<PageTurnView>
     }
 
     final axisVelocity = axis == Axis.horizontal ? velocity?.dx : velocity?.dy;
-    final extent = _extent(axis);
-    final moved = _offset.value.abs() >= extent * .2;
+    final moved = _progress.value.abs() >= .2;
     final flung =
         axisVelocity != null &&
         axisVelocity.abs() >= 600 &&
-        axisVelocity.sign == _offset.value.sign;
+        axisVelocity.sign == _progress.value.sign;
     if (!moved && !flung) {
       unawaited(_animateBack());
       return;
     }
-    unawaited(_animateTurn(_offset.value < 0 ? 1 : -1, axis));
+    unawaited(_animateTurn(_progress.value < 0 ? 1 : -1, axis));
   }
 
   void _handleCancel(PointerCancelEvent event) {
@@ -174,16 +177,15 @@ class _PageTurnViewState extends State<PageTurnView>
   }
 
   Future<void> _animateTurn(int pageDelta, Axis axis) async {
-    if (_offset.isAnimating) return;
+    if (_progress.isAnimating) return;
     if (!_canTurn(pageDelta)) {
       await _animateBack();
       return;
     }
     setState(() => _axis = axis);
-    final extent = _extent(axis);
-    final target = pageDelta > 0 ? -extent : extent;
-    final fraction = ((target - _offset.value).abs() / extent).clamp(.25, 1.0);
-    await _offset.animateTo(
+    final target = pageDelta > 0 ? -1.0 : 1.0;
+    final fraction = (target - _progress.value).abs().clamp(.25, 1.0);
+    await _progress.animateTo(
       target,
       duration: Duration(milliseconds: (180 * fraction).round()),
       curve: Curves.easeOutCubic,
@@ -191,13 +193,13 @@ class _PageTurnViewState extends State<PageTurnView>
     if (!mounted) return;
     widget.onPageChanged(widget.index + pageDelta);
     if (!mounted) return;
-    _offset.value = 0;
+    _progress.value = 0;
     setState(() => _axis = null);
   }
 
   Future<void> _animateBack() async {
-    if (_offset.value != 0) {
-      await _offset.animateTo(
+    if (_progress.value != 0) {
+      await _progress.animateTo(
         0,
         duration: const Duration(milliseconds: 120),
         curve: Curves.easeOutCubic,
@@ -248,17 +250,18 @@ class _PageTurnViewState extends State<PageTurnView>
             onPointerCancel: _handleCancel,
             child: ClipRect(
               child: AnimatedBuilder(
-                animation: _offset,
+                animation: _progress,
                 builder: (context, _) {
                   final axis = _axis ?? _tapAxis;
                   final extent = _extent(axis);
-                  final value = _offset.value;
-                  final adjacent = value < 0
+                  final progress = _progress.value;
+                  final value = progress * extent;
+                  final adjacent = progress < 0
                       ? next
-                      : value > 0
+                      : progress > 0
                       ? previous
                       : null;
-                  final adjacentStart = value < 0 ? extent : -extent;
+                  final adjacentStart = progress < 0 ? extent : -extent;
                   return Stack(
                     fit: StackFit.expand,
                     children: [

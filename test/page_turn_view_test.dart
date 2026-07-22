@@ -67,28 +67,90 @@ void main() {
     expect(page.value, 0);
   });
 
+  testWidgets('keeps fractional drag progress when the viewport resizes', (
+    tester,
+  ) async {
+    final page = ValueNotifier(1);
+    final width = ValueNotifier(600.0);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Center(
+          child: ValueListenableBuilder<double>(
+            valueListenable: width,
+            builder: (context, pageWidth, _) => SizedBox(
+              width: pageWidth,
+              height: 400,
+              child: ValueListenableBuilder<int>(
+                valueListenable: page,
+                builder: (context, index, _) => PageTurnView(
+                  index: index,
+                  itemCount: 3,
+                  direction: PageTurnDirection.horizontal,
+                  onPageChanged: (value) => page.value = value,
+                  itemBuilder: (context, itemIndex) => ColoredBox(
+                    key: ValueKey('page $itemIndex'),
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final initialRect = tester.getRect(find.byType(PageTurnView));
+    final gesture = await tester.startGesture(initialRect.center);
+    await gesture.moveBy(const Offset(-150, 0));
+    await tester.pump();
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('page 1'))).dx,
+      closeTo(initialRect.left - 150, 1),
+    );
+
+    width.value = 300;
+    await tester.pump();
+    final resizedRect = tester.getRect(find.byType(PageTurnView));
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('page 1'))).dx,
+      closeTo(resizedRect.left - 75, 1),
+    );
+
+    await gesture.cancel();
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('long press leaves the page unchanged for text selection', (
     tester,
   ) async {
     final page = ValueNotifier(1);
-    await _pumpPager(tester, page, PageTurnDirection.both);
-    final center = tester.getCenter(find.byType(SelectableText).first);
+    final selections = <TextSelection>[];
+    await _pumpPager(
+      tester,
+      page,
+      PageTurnDirection.both,
+      onSelectionChanged: (selection, _) => selections.add(selection),
+    );
+    final rect = tester.getRect(find.byType(SelectableText).first);
 
-    final gesture = await tester.startGesture(center);
+    final gesture = await tester.startGesture(
+      Offset(rect.left + 15, rect.top + 10),
+    );
     await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
     await gesture.up();
     await tester.pump();
 
     expect(page.value, 1);
-    expect(find.byType(SelectableText), findsWidgets);
+    expect(selections.any((selection) => !selection.isCollapsed), isTrue);
   });
 }
 
 Future<void> _pumpPager(
   WidgetTester tester,
   ValueNotifier<int> page,
-  PageTurnDirection direction,
-) async {
+  PageTurnDirection direction, {
+  SelectionChangedCallback? onSelectionChanged,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       home: ValueListenableBuilder<int>(
@@ -98,8 +160,11 @@ Future<void> _pumpPager(
           itemCount: 3,
           direction: direction,
           onPageChanged: (value) => page.value = value,
-          itemBuilder: (context, itemIndex) =>
-              SelectableText('page $itemIndex', key: ValueKey(itemIndex)),
+          itemBuilder: (context, itemIndex) => SelectableText(
+            'page $itemIndex',
+            key: ValueKey(itemIndex),
+            onSelectionChanged: onSelectionChanged,
+          ),
         ),
       ),
     ),
