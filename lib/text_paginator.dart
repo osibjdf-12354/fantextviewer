@@ -191,6 +191,7 @@ int? _nextPageEnd(
   if (_splitsSurrogatePair(text, end)) {
     end = end - start > 1 ? end - 1 : end + 1;
   }
+  if (end < text.length && text.codeUnitAt(end) == 0x0a) end++;
   return end.clamp(start + 1, text.length);
 }
 

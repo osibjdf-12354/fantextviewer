@@ -40,6 +40,7 @@ typedef ReaderWindowPaginator =
     });
 
 const _eagerScrollPaginationLimit = 256 * 1024;
+const _pageIndicatorInset = 40.0;
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
@@ -340,12 +341,15 @@ class _ReaderViewState extends State<ReaderView> {
             )
           : LayoutBuilder(
               builder: (context, constraints) {
+                final pageBottomInset = _settings.mode == ReadingMode.page
+                    ? _pageIndicatorInset
+                    : 0.0;
                 final pageSize = Size(
                   math.max(
                     1,
                     constraints.maxWidth - _settings.horizontalPadding * 2,
                   ),
-                  math.max(1, constraints.maxHeight),
+                  math.max(1, constraints.maxHeight - pageBottomInset),
                 );
                 _pageSize = pageSize;
                 if (_settings.mode == ReadingMode.page ||
@@ -487,8 +491,12 @@ class _ReaderViewState extends State<ReaderView> {
           itemBuilder: (context, index) {
             final page = pages[index];
             return Padding(
-              padding: EdgeInsets.symmetric(
-                horizontal: _settings.horizontalPadding,
+              key: Key('page-content-$index'),
+              padding: EdgeInsets.fromLTRB(
+                _settings.horizontalPadding,
+                0,
+                _settings.horizontalPadding,
+                _pageIndicatorInset,
               ),
               child: Align(
                 alignment: Alignment.topLeft,
@@ -530,7 +538,7 @@ class _ReaderViewState extends State<ReaderView> {
 
   void _ensurePages(Size size) {
     final key = jsonEncode({
-      'algorithm': 2,
+      'algorithm': 3,
       'path': widget.path,
       'fileSize': widget.fileSize,
       'modified': widget.modified?.toUtc().toIso8601String(),

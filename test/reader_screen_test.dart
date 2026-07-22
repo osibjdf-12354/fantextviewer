@@ -303,6 +303,48 @@ void main() {
     expect(indicator.data, matches(RegExp(r'^\d+/\d+$')));
   });
 
+  testWidgets('page mode reserves the indicator area from pagination', (
+    tester,
+  ) async {
+    Size? measuredSize;
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: _longText,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async {
+                measuredSize = size;
+                final pages = [TextPage(start: 0, end: text.length)];
+                onBatch?.call(pages);
+                return pages;
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final pagerHeight = tester.getSize(find.byType(PageTurnView)).height;
+    expect(measuredSize?.height, pagerHeight - 40);
+    final padding = tester.widget<Padding>(
+      find.byKey(const Key('page-content-0')),
+    );
+    expect((padding.padding as EdgeInsets).bottom, 40);
+  });
+
   testWidgets('reader applies vertical page turns to document progress', (
     tester,
   ) async {

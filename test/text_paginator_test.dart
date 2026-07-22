@@ -7,6 +7,52 @@ import 'package:geulbom/text_paginator.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('moves a boundary newline to the previous page', () async {
+    const text = 'first line\nsecond line\nthird line';
+
+    final pages = await paginateText(
+      text: text,
+      size: const Size(500, 24),
+      style: const TextStyle(fontSize: 20, height: 1),
+    );
+
+    expect(pages.length, greaterThan(1));
+    expect(text.codeUnitAt(pages[1].start), isNot(0x0a));
+    expect(
+      pages.map((page) => text.substring(page.start, page.end)).join(),
+      text,
+    );
+  });
+
+  test('keeps one intentional newline from a consecutive pair', () async {
+    const text = 'first line\n\nsecond line\nthird line';
+
+    final pages = await paginateText(
+      text: text,
+      size: const Size(500, 20),
+      style: const TextStyle(fontSize: 20, height: 1),
+    );
+
+    expect(text.substring(pages.first.end), startsWith('\nsecond line'));
+  });
+
+  test('window pagination uses the same boundary newline ownership', () async {
+    const text = 'first line\n\nsecond line\nthird line';
+
+    final pages = await paginateTextWindow(
+      text: text,
+      startOffset: 0,
+      size: const Size(500, 20),
+      style: const TextStyle(fontSize: 20, height: 1),
+    );
+
+    expect(text.substring(pages.first.end), startsWith('\nsecond line'));
+    expect(
+      pages.map((page) => text.substring(page.start, page.end)).join(),
+      text,
+    );
+  });
+
   test('페이지 범위가 원문을 중복 없이 모두 덮는다', () async {
     final text = List.filled(200, '가나다라마바사아자차카타파하 ').join();
 
