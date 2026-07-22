@@ -102,6 +102,18 @@ void main() {
     );
   });
 
+  test('persists tap mode without changing saved page mode', () {
+    const tap = ReaderSettings(mode: ReadingMode.tap);
+
+    expect(tap.toJson()['mode'], 'tap');
+    expect(ReaderSettings.fromJson(tap.toJson()).mode, ReadingMode.tap);
+    expect(
+      ReaderSettings.fromJson(const {'mode': 'page'}).mode,
+      ReadingMode.page,
+    );
+    expect(ReaderSettings.fromJson(const {}).mode, ReadingMode.scroll);
+  });
+
   test('progress updates do not notify home listeners', () {
     final store = AppStore(File('unused'));
     var notifications = 0;

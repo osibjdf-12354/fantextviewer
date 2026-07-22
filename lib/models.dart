@@ -1,4 +1,4 @@
-enum ReadingMode { scroll, page }
+enum ReadingMode { scroll, page, tap }
 
 enum PageTurnDirection { horizontal, vertical, both }
 
