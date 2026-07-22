@@ -11,6 +11,7 @@ class PageTurnView extends StatefulWidget {
     required this.index,
     required this.itemCount,
     required this.direction,
+    this.tapOnly = false,
     required this.onPageChanged,
     required this.itemBuilder,
   });
@@ -18,6 +19,7 @@ class PageTurnView extends StatefulWidget {
   final int index;
   final int itemCount;
   final PageTurnDirection direction;
+  final bool tapOnly;
   final ValueChanged<int> onPageChanged;
   final IndexedWidgetBuilder itemBuilder;
 
@@ -49,7 +51,8 @@ class _PageTurnViewState extends State<PageTurnView>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.index != widget.index ||
         oldWidget.itemCount != widget.itemCount ||
-        oldWidget.direction != widget.direction) {
+        oldWidget.direction != widget.direction ||
+        oldWidget.tapOnly != widget.tapOnly) {
       _resetInteraction();
     }
   }
@@ -89,7 +92,7 @@ class _PageTurnViewState extends State<PageTurnView>
   }
 
   void _handleMove(PointerMoveEvent event) {
-    if (event.pointer != _pointer || _cancelled) return;
+    if (event.pointer != _pointer || _cancelled || widget.tapOnly) return;
     _velocityTracker?.addPosition(event.timeStamp, event.position);
     final delta = event.position - _downPosition;
     if (_axis == null) {
@@ -144,8 +147,13 @@ class _PageTurnViewState extends State<PageTurnView>
       return;
     }
     if (axis == null) {
-      if (elapsed < kLongPressTimeout && distance < kTouchSlop) {
-        final pageDelta = event.localPosition.dy < _size.height / 2 ? -1 : 1;
+      if (widget.tapOnly &&
+          elapsed < kLongPressTimeout &&
+          distance < kTouchSlop) {
+        final horizontal = widget.direction == PageTurnDirection.horizontal;
+        final pageDelta = horizontal
+            ? (event.localPosition.dx < _size.width / 2 ? -1 : 1)
+            : (event.localPosition.dy < _size.height / 2 ? -1 : 1);
         unawaited(_animateTurn(pageDelta, _tapAxis));
       }
       return;

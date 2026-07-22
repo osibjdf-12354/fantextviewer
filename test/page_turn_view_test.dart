@@ -64,17 +64,61 @@ void main() {
     expect(page.value, 2);
   });
 
-  testWidgets('top and bottom taps turn backward and forward', (tester) async {
+  testWidgets('swipe-only mode ignores taps', (tester) async {
     final page = ValueNotifier(1);
-    await _pumpPager(tester, page, PageTurnDirection.both);
+    await _pumpPager(tester, page, PageTurnDirection.horizontal);
     final rect = tester.getRect(find.byType(PageTurnView));
 
-    await tester.tapAt(Offset(rect.center.dx, rect.top + 20));
+    await tester.tapAt(Offset(rect.right - 20, rect.center.dy));
+    await tester.pumpAndSettle();
+
+    expect(page.value, 1);
+  });
+
+  testWidgets('horizontal tap-only mode uses left and right halves', (
+    tester,
+  ) async {
+    final page = ValueNotifier(1);
+    await _pumpPager(tester, page, PageTurnDirection.horizontal, tapOnly: true);
+    final rect = tester.getRect(find.byType(PageTurnView));
+
+    await tester.tapAt(Offset(rect.left + 20, rect.center.dy));
     await tester.pumpAndSettle();
     expect(page.value, 0);
 
-    await tester.tapAt(Offset(rect.center.dx, rect.bottom - 20));
+    await tester.tapAt(Offset(rect.right - 20, rect.center.dy));
     await tester.pumpAndSettle();
+    expect(page.value, 1);
+  });
+
+  testWidgets('vertical and both tap-only modes use top and bottom halves', (
+    tester,
+  ) async {
+    for (final direction in [
+      PageTurnDirection.vertical,
+      PageTurnDirection.both,
+    ]) {
+      final page = ValueNotifier(1);
+      await _pumpPager(tester, page, direction, tapOnly: true);
+      final rect = tester.getRect(find.byType(PageTurnView));
+
+      await tester.tapAt(Offset(rect.center.dx, rect.top + 20));
+      await tester.pumpAndSettle();
+      expect(page.value, 0);
+
+      await tester.tapAt(Offset(rect.center.dx, rect.bottom - 20));
+      await tester.pumpAndSettle();
+      expect(page.value, 1);
+    }
+  });
+
+  testWidgets('tap-only mode ignores swipes', (tester) async {
+    final page = ValueNotifier(1);
+    await _pumpPager(tester, page, PageTurnDirection.horizontal, tapOnly: true);
+
+    await tester.drag(find.byType(PageTurnView), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+
     expect(page.value, 1);
   });
 
@@ -126,6 +170,7 @@ void main() {
                   index: index,
                   itemCount: 3,
                   direction: PageTurnDirection.horizontal,
+                  tapOnly: false,
                   onPageChanged: (value) => page.value = value,
                   itemBuilder: (context, itemIndex) => ColoredBox(
                     key: ValueKey('page $itemIndex'),
@@ -196,6 +241,7 @@ Future<void> _pumpPager(
   WidgetTester tester,
   ValueNotifier<int> page,
   PageTurnDirection direction, {
+  bool tapOnly = false,
   SelectionChangedCallback? onSelectionChanged,
 }) async {
   await tester.pumpWidget(
@@ -206,6 +252,7 @@ Future<void> _pumpPager(
           index: index,
           itemCount: 3,
           direction: direction,
+          tapOnly: tapOnly,
           onPageChanged: (value) => page.value = value,
           itemBuilder: (context, itemIndex) => SelectableText(
             'page $itemIndex',
