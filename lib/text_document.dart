@@ -29,6 +29,72 @@ class TextChunk {
   String get text => _source.substring(start, end);
 }
 
+class IndentedText {
+  const IndentedText({
+    required this.text,
+    required this.sourceStart,
+    required this.sourceEnd,
+    required List<int> insertedOffsets,
+  }) : _insertedOffsets = insertedOffsets;
+
+  final String text;
+  final int sourceStart;
+  final int sourceEnd;
+  final List<int> _insertedOffsets;
+
+  int sourceOffsetAt(int displayOffset) {
+    final safeOffset = displayOffset.clamp(0, text.length).toInt();
+    var insertedBefore = 0;
+    for (final offset in _insertedOffsets) {
+      if (offset >= safeOffset) break;
+      insertedBefore++;
+    }
+    return (sourceStart + safeOffset - insertedBefore)
+        .clamp(sourceStart, sourceEnd)
+        .toInt();
+  }
+}
+
+IndentedText formatParagraphIndentation(
+  String source, {
+  required int start,
+  required int end,
+  required int paragraphIndent,
+}) {
+  RangeError.checkValidRange(start, end, source.length);
+  assert(paragraphIndent >= 0 && paragraphIndent <= 2);
+  if (paragraphIndent == 0) {
+    return IndentedText(
+      text: source.substring(start, end),
+      sourceStart: start,
+      sourceEnd: end,
+      insertedOffsets: const [],
+    );
+  }
+
+  final buffer = StringBuffer();
+  final insertedOffsets = <int>[];
+  for (var index = start; index < end; index++) {
+    final codeUnit = source.codeUnitAt(index);
+    final paragraphStart = index == 0 || source.codeUnitAt(index - 1) == 0x0a;
+    final alreadyIndented =
+        codeUnit == 0x20 || codeUnit == 0x09 || codeUnit == 0x3000;
+    if (paragraphStart && codeUnit != 0x0a && !alreadyIndented) {
+      for (var count = 0; count < paragraphIndent; count++) {
+        insertedOffsets.add(buffer.length);
+        buffer.writeCharCode(0x3000);
+      }
+    }
+    buffer.writeCharCode(codeUnit);
+  }
+  return IndentedText(
+    text: buffer.toString(),
+    sourceStart: start,
+    sourceEnd: end,
+    insertedOffsets: insertedOffsets,
+  );
+}
+
 TextEncoding detectTextEncoding(Uint8List bytes) {
   final bomEncoding = _bomEncoding(bytes);
   if (bomEncoding != null) return bomEncoding;

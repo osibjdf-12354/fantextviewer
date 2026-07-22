@@ -100,4 +100,56 @@ void main() {
     expect(chunks.every((chunk) => chunk.text.length <= 64 * 1024), isTrue);
     expect(chunks.map((chunk) => chunk.text).join(), source);
   });
+
+  test('formats novel paragraphs without doubling existing indentation', () {
+    const source = '첫 문단\n\n 둘째\n\t셋째\n　넷째\n마지막';
+
+    final one = formatParagraphIndentation(
+      source,
+      start: 0,
+      end: source.length,
+      paragraphIndent: 1,
+    );
+    final two = formatParagraphIndentation(
+      source,
+      start: 0,
+      end: source.length,
+      paragraphIndent: 2,
+    );
+
+    expect(one.text, '　첫 문단\n\n 둘째\n\t셋째\n　넷째\n　마지막');
+    expect(two.text, '　　첫 문단\n\n 둘째\n\t셋째\n　넷째\n　　마지막');
+    final displayOffset = two.text.indexOf('마지막');
+    expect(two.sourceOffsetAt(displayOffset), source.indexOf('마지막'));
+    expect(two.sourceOffsetAt(displayOffset + 3), source.length);
+  });
+
+  test('does not indent a range that begins mid-paragraph', () {
+    const source = '앞문장 계속\n새 문단';
+    final start = source.indexOf('문장');
+
+    final formatted = formatParagraphIndentation(
+      source,
+      start: start,
+      end: source.length,
+      paragraphIndent: 1,
+    );
+
+    expect(formatted.text, '문장 계속\n　새 문단');
+    expect(formatted.sourceOffsetAt(0), start);
+    expect(formatted.sourceOffsetAt(formatted.text.length), source.length);
+  });
+
+  test('zero indentation returns the unmodified source range', () {
+    const source = '앞\n뒤';
+    final formatted = formatParagraphIndentation(
+      source,
+      start: 2,
+      end: source.length,
+      paragraphIndent: 0,
+    );
+
+    expect(formatted.text, '뒤');
+    expect(formatted.sourceOffsetAt(1), source.length);
+  });
 }
