@@ -35,6 +35,7 @@ class _PageTurnViewState extends State<PageTurnView>
   );
   int? _pointer;
   Offset _downPosition = Offset.zero;
+  Offset _lastPosition = Offset.zero;
   Duration _downTime = Duration.zero;
   Axis? _axis;
   VelocityTracker? _velocityTracker;
@@ -73,18 +74,19 @@ class _PageTurnViewState extends State<PageTurnView>
     }
     if (_progress.isAnimating) return;
     _pointer = event.pointer;
-    _downPosition = event.localPosition;
+    _downPosition = event.position;
+    _lastPosition = event.position;
     _downTime = event.timeStamp;
     _axis = null;
     _cancelled = false;
     _velocityTracker = VelocityTracker.withKind(event.kind)
-      ..addPosition(event.timeStamp, event.localPosition);
+      ..addPosition(event.timeStamp, event.position);
   }
 
   void _handleMove(PointerMoveEvent event) {
     if (event.pointer != _pointer || _cancelled) return;
-    _velocityTracker?.addPosition(event.timeStamp, event.localPosition);
-    final delta = event.localPosition - _downPosition;
+    _velocityTracker?.addPosition(event.timeStamp, event.position);
+    final delta = event.position - _downPosition;
     if (_axis == null) {
       if (event.timeStamp - _downTime >= kLongPressTimeout) {
         _cancelled = true;
@@ -97,22 +99,25 @@ class _PageTurnViewState extends State<PageTurnView>
         return;
       }
     }
-    final value = _axis == Axis.horizontal ? delta.dx : delta.dy;
-    final pageDelta = value < 0 ? 1 : -1;
+    final movement = event.position - _lastPosition;
+    _lastPosition = event.position;
+    final value = _axis == Axis.horizontal ? movement.dx : movement.dy;
+    final extent = _extent(_axis!);
+    if (extent == 0) return;
+    final progress = (_progress.value + value / extent).clamp(-1, 1);
+    final pageDelta = progress < 0 ? 1 : -1;
     if (!_canTurn(pageDelta)) {
       _progress.value = 0;
       return;
     }
-    final extent = _extent(_axis!);
-    if (extent == 0) return;
-    _progress.value = (value / extent).clamp(-1, 1).toDouble();
+    _progress.value = progress.toDouble();
   }
 
   void _handleUp(PointerUpEvent event) {
     if (event.pointer != _pointer) return;
-    _velocityTracker?.addPosition(event.timeStamp, event.localPosition);
+    _velocityTracker?.addPosition(event.timeStamp, event.position);
     final elapsed = event.timeStamp - _downTime;
-    final distance = (event.localPosition - _downPosition).distance;
+    final distance = (event.position - _downPosition).distance;
     final cancelled = _cancelled;
     final axis = _axis;
     final velocity = _velocityTracker?.getVelocity().pixelsPerSecond;

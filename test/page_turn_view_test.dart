@@ -67,7 +67,7 @@ void main() {
     expect(page.value, 0);
   });
 
-  testWidgets('keeps fractional drag progress when the viewport resizes', (
+  testWidgets('keeps fractional drag progress through resize and movement', (
     tester,
   ) async {
     final page = ValueNotifier(1);
@@ -114,6 +114,13 @@ void main() {
     expect(
       tester.getTopLeft(find.byKey(const ValueKey('page 1'))).dx,
       closeTo(resizedRect.left - 75, 1),
+    );
+
+    await gesture.moveBy(const Offset(-30, 0));
+    await tester.pump();
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('page 1'))).dx,
+      closeTo(resizedRect.left - 105, 1),
     );
 
     await gesture.cancel();
