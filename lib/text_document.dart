@@ -30,12 +30,12 @@ class TextChunk {
 }
 
 class IndentedText {
-  const IndentedText({
-    required this.text,
-    required this.sourceStart,
-    required this.sourceEnd,
-    required List<int> insertedOffsets,
-  }) : _insertedOffsets = insertedOffsets;
+  const IndentedText(
+    this.text,
+    this.sourceStart,
+    this.sourceEnd,
+    this._insertedOffsets,
+  );
 
   final String text;
   final int sourceStart;
@@ -64,12 +64,7 @@ IndentedText formatParagraphIndentation(
   RangeError.checkValidRange(start, end, source.length);
   assert(paragraphIndent >= 0 && paragraphIndent <= 2);
   if (paragraphIndent == 0) {
-    return IndentedText(
-      text: source.substring(start, end),
-      sourceStart: start,
-      sourceEnd: end,
-      insertedOffsets: const [],
-    );
+    return IndentedText(source.substring(start, end), start, end, const []);
   }
 
   final buffer = StringBuffer();
@@ -87,12 +82,7 @@ IndentedText formatParagraphIndentation(
     }
     buffer.writeCharCode(codeUnit);
   }
-  return IndentedText(
-    text: buffer.toString(),
-    sourceStart: start,
-    sourceEnd: end,
-    insertedOffsets: insertedOffsets,
-  );
+  return IndentedText(buffer.toString(), start, end, insertedOffsets);
 }
 
 TextEncoding detectTextEncoding(Uint8List bytes) {
