@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import 'text_document.dart';
+
 typedef PaginationBatchCallback = void Function(List<TextPage> pages);
 typedef TextLayoutCallback = void Function(int characterCount);
 
@@ -16,6 +18,7 @@ Future<List<TextPage>> paginateText({
   required String text,
   required Size size,
   required TextStyle style,
+  int paragraphIndent = 0,
   ValueChanged<double>? onProgress,
   PaginationBatchCallback? onBatch,
   TextLayoutCallback? onLayout,
@@ -37,6 +40,7 @@ Future<List<TextPage>> paginateText({
       start,
       size,
       style,
+      paragraphIndent,
       probeLength,
       onLayout,
       isCancelled,
@@ -64,6 +68,7 @@ Future<List<TextPage>> paginateTextWindow({
   required int startOffset,
   required Size size,
   required TextStyle style,
+  int paragraphIndent = 0,
   int maxPages = 24,
   TextLayoutCallback? onLayout,
   bool Function()? isCancelled,
@@ -91,6 +96,7 @@ Future<List<TextPage>> paginateTextWindow({
       start,
       size,
       style,
+      paragraphIndent,
       probeLength,
       onLayout,
       isCancelled,
@@ -154,19 +160,23 @@ int? _nextPageEnd(
   int start,
   Size size,
   TextStyle style,
+  int paragraphIndent,
   int probeLength,
   TextLayoutCallback? onLayout,
   bool Function()? isCancelled,
 ) {
   var candidateEnd = math.min(start + probeLength, text.length);
   late TextPainter painter;
+  late IndentedText formatted;
   while (true) {
-    painter = _layout(
-      text.substring(start, candidateEnd),
-      size.width,
-      style,
-      onLayout,
+    formatted = formatParagraphIndentation(
+      text,
+      start: start,
+      end: candidateEnd,
+      paragraphIndent: paragraphIndent,
     );
+    onLayout?.call(candidateEnd - start);
+    painter = _layout(formatted.text, size.width, style);
     if (isCancelled?.call() == true) {
       painter.dispose();
       return null;
@@ -181,13 +191,14 @@ int? _nextPageEnd(
     return candidateEnd;
   }
 
-  final localOffset = painter
+  final displayOffset = painter
       .getPositionForOffset(Offset(size.width, math.max(0, size.height - .1)))
       .offset
-      .clamp(1, candidateEnd - start);
+      .clamp(1, formatted.text.length)
+      .toInt();
   painter.dispose();
 
-  var end = start + localOffset;
+  var end = formatted.sourceOffsetAt(displayOffset);
   if (_splitsSurrogatePair(text, end)) {
     end = end - start > 1 ? end - 1 : end + 1;
   }
@@ -195,13 +206,7 @@ int? _nextPageEnd(
   return end.clamp(start + 1, text.length);
 }
 
-TextPainter _layout(
-  String text,
-  double width,
-  TextStyle style,
-  TextLayoutCallback? onLayout,
-) {
-  onLayout?.call(text.length);
+TextPainter _layout(String text, double width, TextStyle style) {
   return TextPainter(
     text: TextSpan(text: text, style: style),
     textDirection: TextDirection.ltr,

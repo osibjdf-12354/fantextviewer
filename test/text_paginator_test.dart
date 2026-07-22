@@ -71,6 +71,34 @@ void main() {
     expect(pageForOffset(pages, pages[1].start), 1);
   });
 
+  test(
+    'paragraph indentation changes layout but preserves source ranges',
+    () async {
+      final text = List.filled(20, '가나다라\n').join();
+      const size = Size(80, 40);
+      const style = TextStyle(fontSize: 20, height: 1);
+
+      final plain = await paginateText(text: text, size: size, style: style);
+      final indented = await paginateText(
+        text: text,
+        size: size,
+        style: style,
+        paragraphIndent: 2,
+      );
+
+      expect(indented.length, greaterThan(plain.length));
+      expect(indented.first.start, 0);
+      expect(indented.last.end, text.length);
+      for (var index = 1; index < indented.length; index++) {
+        expect(indented[index - 1].end, indented[index].start);
+      }
+      expect(
+        indented.map((page) => text.substring(page.start, page.end)).join(),
+        text,
+      );
+    },
+  );
+
   test('문서 밖 위치는 첫 페이지와 마지막 페이지로 제한한다', () async {
     final pages = await paginateText(
       text: List.filled(100, '가나다라마바사아자차카타파하 ').join(),
