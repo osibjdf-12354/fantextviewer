@@ -41,6 +41,29 @@ void main() {
     expect(page.value, 1);
   });
 
+  testWidgets('multi-touch stays cancelled until every pointer lifts', (
+    tester,
+  ) async {
+    final page = ValueNotifier(1);
+    await _pumpPager(tester, page, PageTurnDirection.horizontal);
+    final center = tester.getCenter(find.byType(PageTurnView));
+
+    final first = await tester.startGesture(center, pointer: 1);
+    final second = await tester.startGesture(center, pointer: 2);
+    await first.up();
+
+    final third = await tester.startGesture(center, pointer: 3);
+    await third.moveBy(const Offset(-300, 0));
+    await third.up();
+    await tester.pumpAndSettle();
+    expect(page.value, 1);
+
+    await second.up();
+    await tester.drag(find.byType(PageTurnView), const Offset(-300, 0));
+    await tester.pumpAndSettle();
+    expect(page.value, 2);
+  });
+
   testWidgets('top and bottom taps turn backward and forward', (tester) async {
     final page = ValueNotifier(1);
     await _pumpPager(tester, page, PageTurnDirection.both);

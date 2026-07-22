@@ -33,6 +33,7 @@ class _PageTurnViewState extends State<PageTurnView>
     lowerBound: -1,
     upperBound: 1,
   );
+  final Set<int> _activePointers = {};
   int? _pointer;
   Offset _downPosition = Offset.zero;
   Offset _lastPosition = Offset.zero;
@@ -70,7 +71,8 @@ class _PageTurnViewState extends State<PageTurnView>
   }
 
   void _handleDown(PointerDownEvent event) {
-    if (_pointer != null) {
+    _activePointers.add(event.pointer);
+    if (_activePointers.length > 1) {
       _cancelled = true;
       return;
     }
@@ -121,7 +123,11 @@ class _PageTurnViewState extends State<PageTurnView>
   }
 
   void _handleUp(PointerUpEvent event) {
-    if (event.pointer != _pointer) return;
+    _activePointers.remove(event.pointer);
+    if (event.pointer != _pointer) {
+      if (_activePointers.isEmpty) _cancelled = false;
+      return;
+    }
     _velocityTracker?.addPosition(event.timeStamp, event.position);
     final elapsed = event.timeStamp - _downTime;
     final distance = (event.position - _downPosition).distance;
@@ -131,7 +137,7 @@ class _PageTurnViewState extends State<PageTurnView>
     _pointer = null;
     _dragProgress = 0;
     _velocityTracker = null;
-    _cancelled = false;
+    if (_activePointers.isEmpty) _cancelled = false;
 
     if (cancelled) {
       unawaited(_animateBack());
@@ -159,11 +165,15 @@ class _PageTurnViewState extends State<PageTurnView>
   }
 
   void _handleCancel(PointerCancelEvent event) {
-    if (event.pointer != _pointer) return;
+    _activePointers.remove(event.pointer);
+    if (event.pointer != _pointer) {
+      if (_activePointers.isEmpty) _cancelled = false;
+      return;
+    }
     _pointer = null;
     _dragProgress = 0;
     _velocityTracker = null;
-    _cancelled = false;
+    if (_activePointers.isEmpty) _cancelled = false;
     unawaited(_animateBack());
   }
 
