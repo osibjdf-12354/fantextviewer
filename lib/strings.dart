@@ -1,4 +1,10 @@
 abstract final class AppStrings {
+  static const pageCacheFailed = '페이지 캐시를 읽지 못해 다시 계산합니다.';
+  static const stateRecoveryTitle = '저장 상태 복구';
+  static const stateRecoveryBody =
+      '손상된 저장 상태를 초기화했습니다. 보존된 백업을 수정한 뒤 다시 가져올 수 있습니다.';
+  static const importStateFile = '상태 파일 가져오기';
+  static const stateImportSucceeded = '저장 상태를 복구했습니다.';
   static const appName = '글봄';
 
   static const cancel = '취소';
@@ -115,6 +121,7 @@ abstract final class AppStrings {
   static const positivePageSize = '페이지 크기는 0보다 커야 합니다.';
 
   static String folderReadFailed(Object error) => '폴더를 읽지 못했습니다.\n$error';
+  static String stateImportFailed(Object error) => '저장 상태를 가져오지 못했습니다.\n$error';
   static String folderOpenFailed(Object error) => '폴더를 열지 못했습니다.\n$error';
   static String unsupportedSchema(Object version) =>
       '지원하지 않는 저장 데이터 버전: $version';

@@ -54,9 +54,3 @@ jobs:
           if ($null -eq $apksigner) { throw "apksigner.bat not found" }
           & $apksigner.FullName verify --verbose build/app/outputs/flutter-apk/app-release.apk
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: geulbom-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-          if-no-files-found: error

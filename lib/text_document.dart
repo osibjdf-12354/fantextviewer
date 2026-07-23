@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:characters/characters.dart' as characters;
 import 'package:charset_converter/charset_converter.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
@@ -14,6 +15,7 @@ enum TextEncoding { utf8, utf16le, utf16be, cp949 }
 
 const maxSupportedTextFileBytes = 64 * 1024 * 1024;
 const maxWholeFileDecodeBytes = 32 * 1024 * 1024;
+const _textFileChannel = MethodChannel('com.songs.geulbom/text-file');
 
 class TextFileTooLargeException implements Exception {
   const TextFileTooLargeException({
@@ -34,10 +36,11 @@ class TextFileTooLargeException implements Exception {
 }
 
 class DecodedText {
-  const DecodedText(this.text, this.encoding);
+  const DecodedText(this.text, this.encoding, {required this.fingerprint});
 
   final String text;
   final TextEncoding encoding;
+  final String fingerprint;
 }
 
 class TextChunk {
@@ -124,6 +127,7 @@ Future<DecodedText> decodeText(
   Uint8List bytes, {
   TextEncoding? forced,
   Future<String> Function(Uint8List)? cp949Decoder,
+  String? contentFingerprint,
 }) async {
   var encoding = forced ?? _bomEncoding(bytes);
   String value;
@@ -138,7 +142,11 @@ Future<DecodedText> decodeText(
   } else {
     value = await _decodeBytes(bytes, encoding, cp949Decoder);
   }
-  return DecodedText(_normalizeLineEndings(value), encoding);
+  return DecodedText(
+    _normalizeLineEndings(value),
+    encoding,
+    fingerprint: contentFingerprint ?? sha256.convert(bytes).toString(),
+  );
 }
 
 Future<DecodedText> loadTextFile(
@@ -179,6 +187,7 @@ Future<DecodedText> _loadTextFileInBackground(
       encoding: forced,
     );
   }
+  final fingerprint = (await sha256.bind(file.openRead()).first).toString();
   final reader = await file.open();
   late final Uint8List prefix;
   try {
@@ -188,8 +197,8 @@ Future<DecodedText> _loadTextFileInBackground(
   }
   final bomEncoding = _bomEncoding(prefix);
   final encoding = forced ?? bomEncoding;
-  if (encoding != null &&
-      encoding != TextEncoding.utf8 &&
+  if (encoding == TextEncoding.cp949 &&
+      !Platform.isAndroid &&
       size > maxWholeFileBytes) {
     throw TextFileTooLargeException(
       actualBytes: size,
@@ -197,14 +206,42 @@ Future<DecodedText> _loadTextFileInBackground(
       encoding: encoding,
     );
   }
+  if (encoding == TextEncoding.utf16le || encoding == TextEncoding.utf16be) {
+    final value = await _decodeUtf16File(
+      file,
+      encoding == TextEncoding.utf16le ? Endian.little : Endian.big,
+      skipBom: bomEncoding == encoding,
+    );
+    return DecodedText(
+      _normalizeLineEndings(value),
+      encoding!,
+      fingerprint: fingerprint,
+    );
+  }
   if (encoding == null || encoding == TextEncoding.utf8) {
     try {
       final start = bomEncoding == TextEncoding.utf8 ? 3 : 0;
       final value = await file.openRead(start).transform(utf8.decoder).join();
-      return DecodedText(_normalizeLineEndings(value), TextEncoding.utf8);
+      return DecodedText(
+        _normalizeLineEndings(value),
+        TextEncoding.utf8,
+        fingerprint: fingerprint,
+      );
     } on FormatException {
       if (encoding == TextEncoding.utf8) rethrow;
     }
+  }
+  if (Platform.isAndroid) {
+    final value = await _textFileChannel.invokeMethod<String>('decode', {
+      'path': path,
+      'encoding': 'MS949',
+    });
+    if (value == null) throw const FormatException('CP949 decode failed');
+    return DecodedText(
+      _normalizeLineEndings(value),
+      TextEncoding.cp949,
+      fingerprint: fingerprint,
+    );
   }
   if (size > maxWholeFileBytes) {
     throw TextFileTooLargeException(
@@ -214,7 +251,11 @@ Future<DecodedText> _loadTextFileInBackground(
     );
   }
   final bytes = await file.readAsBytes();
-  return decodeText(bytes, forced: encoding ?? TextEncoding.cp949);
+  return decodeText(
+    bytes,
+    forced: encoding ?? TextEncoding.cp949,
+    contentFingerprint: fingerprint,
+  );
 }
 
 Future<String> _decodeBytes(
@@ -359,13 +400,17 @@ bool _startsWith(Uint8List bytes, List<int> prefix) {
 }
 
 String _decodeUtf16(Uint8List bytes, Endian endian) {
-  var start =
+  final start =
       _startsWith(bytes, const [0xff, 0xfe]) ||
           _startsWith(bytes, const [0xfe, 0xff])
       ? 2
       : 0;
+  return _decodeUtf16Chunk(Uint8List.sublistView(bytes, start), endian);
+}
+
+String _decodeUtf16Chunk(Uint8List bytes, Endian endian) {
   final codes = <int>[];
-  for (; start + 1 < bytes.length; start += 2) {
+  for (var start = 0; start + 1 < bytes.length; start += 2) {
     codes.add(
       endian == Endian.little
           ? bytes[start] | bytes[start + 1] << 8
@@ -373,6 +418,41 @@ String _decodeUtf16(Uint8List bytes, Endian endian) {
     );
   }
   return String.fromCharCodes(codes);
+}
+
+Future<String> _decodeUtf16File(
+  File file,
+  Endian endian, {
+  required bool skipBom,
+}) async {
+  final reader = await file.open();
+  final output = StringBuffer();
+  int? pendingByte;
+  try {
+    if (skipBom) await reader.setPosition(2);
+    while (true) {
+      final chunk = await reader.read(64 * 1024);
+      if (chunk.isEmpty) break;
+      Uint8List bytes = chunk;
+      if (pendingByte != null) {
+        bytes = Uint8List(chunk.length + 1)
+          ..[0] = pendingByte
+          ..setRange(1, chunk.length + 1, chunk);
+        pendingByte = null;
+      }
+      if (bytes.length.isOdd) {
+        pendingByte = bytes.last;
+        bytes = Uint8List.sublistView(bytes, 0, bytes.length - 1);
+      }
+      if (bytes.isNotEmpty) output.write(_decodeUtf16Chunk(bytes, endian));
+    }
+  } finally {
+    await reader.close();
+  }
+  if (pendingByte != null) {
+    throw const FormatException('UTF-16 file has an incomplete code unit');
+  }
+  return output.toString();
 }
 
 Future<String> _decodeCp949(Uint8List bytes) async {

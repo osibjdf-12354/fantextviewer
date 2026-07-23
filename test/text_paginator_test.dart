@@ -228,18 +228,23 @@ void main() {
     expect(batches.expand((batch) => batch), orderedEquals(pages));
   });
 
-  test('yields to the event loop after at most two pages', () async {
+  test('yields before layout and bounds every layout input', () async {
     var eventLoopTurn = false;
     Timer.run(() => eventLoopTurn = true);
+    final layoutLengths = <int>[];
 
     final pages = await paginateText(
       text: List.filled(1000, 'responsive pagination text ').join(),
-      size: const Size(160, 120),
+      size: const Size(2000, 2000),
       style: const TextStyle(fontSize: 20, height: 1.5),
-      isCancelled: () => eventLoopTurn,
+      onLayout: (length) {
+        expect(eventLoopTurn, isTrue);
+        layoutLengths.add(length);
+      },
     );
 
-    expect(pages, hasLength(2));
+    expect(pages, isNotEmpty);
+    expect(layoutLengths, everyElement(lessThanOrEqualTo(4096)));
   });
 
   test('uses the previous page length as the next first probe', () async {
@@ -287,6 +292,7 @@ void main() {
 
     expect(pages.length, greaterThan(1));
     expect(layoutLengths, hasLength(lessThan(20)));
+    expect(layoutLengths, everyElement(lessThanOrEqualTo(4096)));
   });
 
   test('cancels while growing a dense-page probe', () async {

@@ -8,6 +8,9 @@ import 'text_document.dart';
 typedef PaginationBatchCallback = void Function(List<TextPage> pages);
 typedef TextLayoutCallback = void Function(int characterCount);
 
+// ponytail: cap UI-isolate layout work; raise only if a real viewport underfills.
+const _maxLayoutCharacters = 4096;
+
 class TextPage {
   const TextPage({required this.start, required this.end, int? displayStart})
     : displayStart = displayStart ?? start;
@@ -39,7 +42,7 @@ Future<List<TextPage>> paginateText({
   var probeLength = 4096;
   while (logicalStart < text.length) {
     if (isCancelled?.call() == true) break;
-    final boundary = _nextPageBoundary(
+    final boundary = await _nextPageBoundary(
       text,
       logicalStart,
       displayStart,
@@ -104,7 +107,7 @@ Future<List<TextPage>> paginateTextWindow({
   var probeLength = 4096;
   while (logicalStart < text.length && pages.length < maxPages) {
     if (isCancelled?.call() == true) break;
-    final boundary = _nextPageBoundary(
+    final boundary = await _nextPageBoundary(
       text,
       logicalStart,
       displayStart,
@@ -178,7 +181,7 @@ int pageForOffset(List<TextPage> pages, int offset) {
 
 typedef _PageBoundary = ({int end, int nextDisplayStart});
 
-_PageBoundary? _nextPageBoundary(
+Future<_PageBoundary?> _nextPageBoundary(
   String text,
   int logicalStart,
   int displayStart,
@@ -188,7 +191,8 @@ _PageBoundary? _nextPageBoundary(
   int probeLength,
   TextLayoutCallback? onLayout,
   bool Function()? isCancelled,
-) {
+) async {
+  probeLength = probeLength.clamp(1, _maxLayoutCharacters);
   var candidateEnd = math.min(
     math.max(logicalStart + 1, displayStart + probeLength),
     text.length,
@@ -196,6 +200,10 @@ _PageBoundary? _nextPageBoundary(
   late TextPainter painter;
   late IndentedText formatted;
   while (true) {
+    if (candidateEnd - displayStart >= 1024) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    if (isCancelled?.call() == true) return null;
     formatted = formatParagraphIndentation(
       text,
       start: displayStart,
@@ -209,9 +217,16 @@ _PageBoundary? _nextPageBoundary(
       return null;
     }
     if (painter.height > size.height || candidateEnd == text.length) break;
+    if (candidateEnd - displayStart >= _maxLayoutCharacters) {
+      painter.dispose();
+      var end = candidateEnd;
+      if (_splitsSurrogatePair(text, end)) end--;
+      return (end: end, nextDisplayStart: end);
+    }
     painter.dispose();
     candidateEnd = math.min(
-      displayStart + (candidateEnd - displayStart) * 2,
+      displayStart +
+          math.min(_maxLayoutCharacters, (candidateEnd - displayStart) * 2),
       text.length,
     );
   }

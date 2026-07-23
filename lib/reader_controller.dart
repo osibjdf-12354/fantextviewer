@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 
@@ -54,6 +55,7 @@ class ReaderController extends ChangeNotifier {
   bool _autoMode = false;
   int _autoPauseDepth = 0;
   bool _appActive = true;
+  int _searchGeneration = 0;
 
   ReaderSettings get settings => _settings;
   int get offset => _offset;
@@ -101,7 +103,8 @@ class ReaderController extends ChangeNotifier {
     _autoTimer = null;
   }
 
-  ReaderSearchMatch? startSearch(String query) {
+  Future<ReaderSearchMatch?> startSearch(String query) async {
+    final generation = ++_searchGeneration;
     _searchQuery = query;
     if (query.isEmpty || text.isEmpty) {
       _activeSearchMatch = null;
@@ -109,8 +112,51 @@ class ReaderController extends ChangeNotifier {
       return null;
     }
     final start = (_offset + 1).clamp(0, text.length);
-    var found = text.indexOf(query, start);
-    if (found < 0) found = text.indexOf(query);
+    final found = await _findText(
+      text: text,
+      query: query,
+      start: start,
+      backwards: false,
+    );
+    return _applySearchResult(found, query, generation);
+  }
+
+  Future<ReaderSearchMatch?> nextSearchResult() async {
+    if (_searchQuery.isEmpty || text.isEmpty) return null;
+    final generation = ++_searchGeneration;
+    final query = _searchQuery;
+    final current = _activeSearchMatch;
+    final start = current?.end ?? (_offset + 1).clamp(0, text.length);
+    final found = await _findText(
+      text: text,
+      query: query,
+      start: start,
+      backwards: false,
+    );
+    return _applySearchResult(found, query, generation);
+  }
+
+  Future<ReaderSearchMatch?> previousSearchResult() async {
+    if (_searchQuery.isEmpty || text.isEmpty) return null;
+    final generation = ++_searchGeneration;
+    final query = _searchQuery;
+    final current = _activeSearchMatch;
+    final start = current == null ? _offset - 1 : current.start - 1;
+    final found = await _findText(
+      text: text,
+      query: query,
+      start: start,
+      backwards: true,
+    );
+    return _applySearchResult(found, query, generation);
+  }
+
+  ReaderSearchMatch? _applySearchResult(
+    int found,
+    String query,
+    int generation,
+  ) {
+    if (generation != _searchGeneration) return _activeSearchMatch;
     _activeSearchMatch = found < 0
         ? null
         : ReaderSearchMatch(start: found, length: query.length);
@@ -118,34 +164,9 @@ class ReaderController extends ChangeNotifier {
     return _activeSearchMatch;
   }
 
-  ReaderSearchMatch? nextSearchResult() {
-    if (_searchQuery.isEmpty || text.isEmpty) return null;
-    final current = _activeSearchMatch;
-    final start = current?.end ?? (_offset + 1).clamp(0, text.length);
-    var found = text.indexOf(_searchQuery, start);
-    if (found < 0) found = text.indexOf(_searchQuery);
-    return _setSearchMatch(found);
-  }
-
-  ReaderSearchMatch? previousSearchResult() {
-    if (_searchQuery.isEmpty || text.isEmpty) return null;
-    final current = _activeSearchMatch;
-    final start = current == null ? _offset - 1 : current.start - 1;
-    var found = start < 0 ? -1 : text.lastIndexOf(_searchQuery, start);
-    if (found < 0) found = text.lastIndexOf(_searchQuery);
-    return _setSearchMatch(found);
-  }
-
-  ReaderSearchMatch? _setSearchMatch(int found) {
-    _activeSearchMatch = found < 0
-        ? null
-        : ReaderSearchMatch(start: found, length: _searchQuery.length);
-    notifyListeners();
-    return _activeSearchMatch;
-  }
-
   void clearSearch() {
     if (_searchQuery.isEmpty && _activeSearchMatch == null) return;
+    _searchGeneration++;
     _searchQuery = '';
     _activeSearchMatch = null;
     notifyListeners();
@@ -230,4 +251,28 @@ class ReaderController extends ChangeNotifier {
     paginationActivity.dispose();
     super.dispose();
   }
+}
+
+const _isolateSearchThreshold = 256 * 1024;
+
+Future<int> _findText({
+  required String text,
+  required String query,
+  required int start,
+  required bool backwards,
+}) async {
+  int find() {
+    if (backwards) {
+      var found = start < 0 ? -1 : text.lastIndexOf(query, start);
+      if (found < 0) found = text.lastIndexOf(query);
+      return found;
+    }
+    var found = text.indexOf(query, start);
+    if (found < 0) found = text.indexOf(query);
+    return found;
+  }
+
+  return text.length < _isolateSearchThreshold
+      ? find()
+      : Isolate.run(find, debugName: 'reader-search');
 }

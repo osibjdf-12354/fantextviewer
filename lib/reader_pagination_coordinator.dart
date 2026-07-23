@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,6 +11,15 @@ import 'reader_controller.dart';
 import 'strings.dart';
 import 'text_document.dart';
 import 'text_paginator.dart';
+
+const _flutterEngineRevision = String.fromEnvironment(
+  'FLUTTER_ENGINE_REVISION',
+  defaultValue: 'unknown',
+);
+const _flutterFrameworkRevision = String.fromEnvironment(
+  'FLUTTER_FRAMEWORK_REVISION',
+  defaultValue: 'unknown',
+);
 
 typedef ReaderPaginator =
     Future<List<TextPage>> Function({
@@ -48,6 +58,7 @@ class ReaderPaginationCoordinator {
     required this.encoding,
     required this.fileSize,
     required this.modified,
+    required this.contentFingerprint,
     required this.pageIndexCache,
     required this.paginator,
     required this.windowPaginator,
@@ -71,6 +82,7 @@ class ReaderPaginationCoordinator {
   final TextEncoding encoding;
   final int? fileSize;
   final DateTime? modified;
+  final String contentFingerprint;
   final PageIndexCache? pageIndexCache;
   final ReaderPaginator paginator;
   final ReaderWindowPaginator windowPaginator;
@@ -177,11 +189,16 @@ class ReaderPaginationCoordinator {
     _textStyle = style;
     final currentSettings = settings();
     final key = jsonEncode({
-      'algorithm': 6,
+      'paginationVersion': 7,
+      'runtime':
+          '${Platform.version}|${Platform.operatingSystem}|'
+          '${Platform.operatingSystemVersion}|'
+          'engine=$_flutterEngineRevision|framework=$_flutterFrameworkRevision',
       'path': path,
       'fileSize': fileSize,
       'modified': modified?.toUtc().toIso8601String(),
       'textLength': text.length,
+      'contentFingerprint': contentFingerprint,
       'encoding': encoding.name,
       'width': size.width,
       'height': size.height,
@@ -361,8 +378,40 @@ class ReaderPaginationCoordinator {
         : math
               .max(1, (measuredPages.last.end / measuredPages.length).round())
               .toInt();
+    var targetOffset = sourceOffset
+        .clamp(0, math.max(0, text.length - 1))
+        .toInt();
+    if (targetOffset > 0 &&
+        targetOffset < text.length &&
+        text.codeUnitAt(targetOffset - 1) >= 0xd800 &&
+        text.codeUnitAt(targetOffset - 1) <= 0xdbff &&
+        text.codeUnitAt(targetOffset) >= 0xdc00 &&
+        text.codeUnitAt(targetOffset) <= 0xdfff) {
+      targetOffset--;
+    }
+    var provisionalEnd = math
+        .min(text.length, targetOffset + math.max(1, charactersPerPage))
+        .toInt();
+    if (provisionalEnd > targetOffset &&
+        provisionalEnd < text.length &&
+        text.codeUnitAt(provisionalEnd - 1) >= 0xd800 &&
+        text.codeUnitAt(provisionalEnd - 1) <= 0xdbff &&
+        text.codeUnitAt(provisionalEnd) >= 0xdc00 &&
+        text.codeUnitAt(provisionalEnd) <= 0xdfff) {
+      provisionalEnd--;
+    }
+    _pageWindow = ReaderPageWindow(
+      pages: [TextPage(start: targetOffset, end: provisionalEnd)],
+      firstPage: page,
+    );
+    _pageIndex = 0;
+    _displayPageNumber = page;
+    onSetOffset(targetOffset);
+    onViewChanged();
+    onRestartAuto();
+
     final startOffset = math
-        .max(0, sourceOffset - charactersPerPage * math.min(4, page - 1))
+        .max(0, targetOffset - charactersPerPage * math.min(4, page - 1))
         .toInt();
     final paginationGeneration = _paginationGeneration;
     final windowGeneration = ++_pageWindowGeneration;
@@ -384,11 +433,11 @@ class ReaderPaginationCoordinator {
     );
     if (cancelled()) return;
     if (windowPages.isNotEmpty &&
-        sourceOffset >= windowPages.last.end &&
+        targetOffset >= windowPages.last.end &&
         windowPages.last.end < text.length) {
       windowPages = await windowPaginator(
         text: text,
-        startOffset: sourceOffset,
+        startOffset: targetOffset,
         size: size,
         style: style,
         paragraphIndent: currentSettings.paragraphIndent,
@@ -397,7 +446,7 @@ class ReaderPaginationCoordinator {
     }
     if (cancelled() || windowPages.isEmpty) return;
 
-    var localPage = pageForOffset(windowPages, sourceOffset);
+    var localPage = pageForOffset(windowPages, targetOffset);
     if (localPage >= page) {
       final drop = localPage - (page - 1);
       windowPages = windowPages.sublist(drop);
@@ -412,7 +461,7 @@ class ReaderPaginationCoordinator {
     _pageWindow = ReaderPageWindow(pages: windowPages, firstPage: firstPage);
     _pageIndex = localPage;
     _displayPageNumber = page;
-    onSetOffset(sourceOffset);
+    onSetOffset(targetOffset);
     onViewChanged();
     onRestartAuto();
   }

@@ -377,6 +377,72 @@ void main() {
     expect(store.document('/book.txt').offset, 42);
   });
 
+  test('document lookup does not create stored state', () {
+    final store = AppStore(File('unused'));
+
+    final missing = store.document('/missing.txt');
+
+    expect(missing.path, '/missing.txt');
+    expect(store.data.documents, isEmpty);
+  });
+
+  test('exposed application state cannot mutate the store', () {
+    final store = AppStore(File('unused'))
+      ..addBookmark(
+        '/book.txt',
+        const Bookmark(offset: 1, excerpt: 'saved', createdAt: 'now'),
+      );
+
+    expect(store.data.documents.clear, throwsUnsupportedError);
+    expect(store.document('/book.txt').bookmarks.clear, throwsUnsupportedError);
+    expect(store.document('/book.txt').bookmarks, hasLength(1));
+  });
+
+  test('imports a repaired state file', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'geulbom_state_import',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final stateFile = File(
+      '${directory.path}${Platform.pathSeparator}state.json',
+    );
+    final importedFile = File(
+      '${directory.path}${Platform.pathSeparator}repaired.json',
+    );
+    await importedFile.writeAsString(
+      '{"schemaVersion":2,"settings":{"fontSize":24},'
+      '"documents":{"/book.txt":{"offset":7}}}',
+    );
+    final store = AppStore(stateFile);
+
+    await store.importState(importedFile);
+
+    expect(store.data.settings.fontSize, 24);
+    expect(store.document('/book.txt').offset, 7);
+    expect(await stateFile.exists(), isTrue);
+  });
+
+  test('invalid state import preserves the current state', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'geulbom_state_import_invalid',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final invalid = File(
+      '${directory.path}${Platform.pathSeparator}invalid.json',
+    );
+    await invalid.writeAsString('{broken');
+    final store = AppStore(
+      File('${directory.path}${Platform.pathSeparator}state.json'),
+    )..updateSettings(const ReaderSettings(fontSize: 24));
+
+    await expectLater(
+      store.importState(invalid),
+      throwsA(isA<FormatException>()),
+    );
+
+    expect(store.data.settings.fontSize, 24);
+  });
+
   test('손상된 저장 파일을 보존하고 기본값으로 복구한다', () async {
     final directory = await Directory.systemTemp.createTemp('geulbom_broken');
     addTearDown(() => directory.delete(recursive: true));
@@ -387,6 +453,8 @@ void main() {
     await store.load();
 
     expect(store.data.settings.background, const RgbColor(196, 236, 187));
+    expect(store.recoveryFile, isA<File>());
+    expect(await store.recoveryFile!.exists(), isTrue);
     expect(
       directory.listSync().whereType<File>().any(
         (entry) => entry.path.contains('.broken.'),

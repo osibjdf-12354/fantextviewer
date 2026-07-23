@@ -34,10 +34,13 @@ void main() {
       ]);
       expect(await first.file.exists(), isTrue);
       expect(registered, hasLength(2));
+      await library.loadFont(first);
+      expect(registered, hasLength(2));
 
       await library.deleteFont(first);
 
       expect(await first.file.exists(), isFalse);
+      expect(library.isLoaded(first.fileName), isTrue);
     },
   );
 

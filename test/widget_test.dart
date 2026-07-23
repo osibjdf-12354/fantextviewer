@@ -60,6 +60,20 @@ void main() {
     expect(find.byIcon(Icons.folder_open), findsWidgets);
     expect(find.text(AppStrings.noRecentFiles), findsOneWidget);
   });
+
+  testWidgets('corrupted state exposes its backup and recovery import action', (
+    tester,
+  ) async {
+    final store = _MemoryStore()
+      ..lastLoadError = const FormatException('broken')
+      ..recoveryFile = File('state.json.broken');
+
+    await tester.pumpWidget(GeulbomApp(store: store));
+
+    expect(find.text('저장 상태 복구'), findsOneWidget);
+    expect(find.text('상태 파일 가져오기'), findsOneWidget);
+    expect(find.textContaining(store.recoveryFile!.path), findsOneWidget);
+  });
 }
 
 class _MemoryStore extends AppStore {

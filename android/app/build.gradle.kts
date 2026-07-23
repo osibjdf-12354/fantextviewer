@@ -42,6 +42,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     val localReleaseSigning =
@@ -61,6 +62,12 @@ android {
             signingConfig = localReleaseSigning
         }
     }
+}
+
+dependencies {
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
 }
 
 kotlin {

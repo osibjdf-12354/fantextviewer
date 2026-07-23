@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -72,6 +73,23 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  Future<void> _importState() async {
+    final selected = await openFile();
+    if (selected == null) return;
+    try {
+      await widget.store.importState(File(selected.path));
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.stateImportSucceeded)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.stateImportFailed(error))),
+      );
+    }
+  }
+
   Future<void> _openReader(String path) async {
     if (!await File(path).exists()) {
       if (!mounted) return;
@@ -129,6 +147,30 @@ class _HomeScreenState extends State<HomeScreen> {
       animation: widget.store,
       builder: (context, _) {
         final recent = widget.store.recentDocuments;
+        final recoveryFile = widget.store.recoveryFile;
+        final content = recent.isEmpty
+            ? const _EmptyHome()
+            : ListView(
+                padding: const EdgeInsets.only(bottom: 88),
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                    child: Text(
+                      AppStrings.recentFiles,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                  ),
+                  for (final document in recent)
+                    _RecentTile(
+                      document: document,
+                      onTap: () => _openReader(document.path),
+                      onRemove: () async {
+                        widget.store.removeDocument(document.path);
+                        await widget.store.save();
+                      },
+                    ),
+                ],
+              );
         return Scaffold(
           appBar: AppBar(
             title: const Text(AppStrings.appName),
@@ -140,29 +182,35 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
-          body: recent.isEmpty
-              ? const _EmptyHome()
-              : ListView(
-                  padding: const EdgeInsets.only(bottom: 88),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-                      child: Text(
-                        AppStrings.recentFiles,
-                        style: Theme.of(context).textTheme.titleLarge,
+          body: Column(
+            children: [
+              if (widget.store.lastLoadError != null)
+                MaterialBanner(
+                  content: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        AppStrings.stateRecoveryTitle,
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${AppStrings.stateRecoveryBody}\n'
+                        '${recoveryFile?.path ?? AppStrings.unknown}',
+                      ),
+                    ],
+                  ),
+                  leading: const Icon(Icons.restore_page_outlined),
+                  actions: [
+                    TextButton(
+                      onPressed: _importState,
+                      child: const Text(AppStrings.importStateFile),
                     ),
-                    for (final document in recent)
-                      _RecentTile(
-                        document: document,
-                        onTap: () => _openReader(document.path),
-                        onRemove: () async {
-                          widget.store.removeDocument(document.path);
-                          await widget.store.save();
-                        },
-                      ),
                   ],
                 ),
+              Expanded(child: content),
+            ],
+          ),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: _openBrowser,
             icon: const Icon(Icons.folder_open),

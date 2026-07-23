@@ -10,6 +10,20 @@ import 'package:geulbom/text_document.dart';
 
 void main() {
   test(
+    'content fingerprint distinguishes equal-length replacement files',
+    () async {
+      final first = await decodeText(Uint8List.fromList(utf8.encode('AAAA')));
+      final second = await decodeText(Uint8List.fromList(utf8.encode('BBBB')));
+
+      expect((first as dynamic).fingerprint, isNotEmpty);
+      expect(
+        (first as dynamic).fingerprint,
+        isNot((second as dynamic).fingerprint),
+      );
+    },
+  );
+
+  test(
     'loads a large UTF-8 file while the root event loop stays responsive',
     () async {
       final directory = await Directory.systemTemp.createTemp('geulbom_decode');
@@ -86,6 +100,36 @@ void main() {
       ),
       throwsA(isA<TextFileTooLargeException>()),
     );
+  });
+
+  test('UTF-16 file decoding streams beyond the whole-file byte cap', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'geulbom_utf16_stream',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}${Platform.pathSeparator}utf16.txt');
+    await file.writeAsBytes([
+      0xff,
+      0xfe,
+      0x00,
+      0xac,
+      0x01,
+      0xac,
+      0x02,
+      0xac,
+      0x03,
+      0xac,
+    ]);
+
+    final decoded = await loadTextFile(
+      file.path,
+      forced: TextEncoding.utf16le,
+      maxFileBytes: 20,
+      maxWholeFileBytes: 8,
+    );
+
+    expect(decoded.text, '가각갂갃');
+    expect(decoded.encoding, TextEncoding.utf16le);
   });
 
   test('BOM을 제거하고 모든 줄바꿈을 LF로 바꾼다', () async {

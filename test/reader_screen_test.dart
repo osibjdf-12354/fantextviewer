@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 
@@ -32,7 +33,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: '본문',
@@ -70,7 +71,7 @@ void main() {
             data: MediaQuery.of(
               context,
             ).copyWith(textScaler: const TextScaler.linear(1.5)),
-            child: ReaderView(
+            child: ReaderView.test(
               path: '/book.txt',
               title: 'book.txt',
               text: text,
@@ -131,7 +132,7 @@ void main() {
         ..updateSettings(ReaderSettings(fontFileName: fileName));
       await tester.pumpWidget(
         MaterialApp(
-          home: ReaderView(
+          home: ReaderView.test(
             key: ValueKey(fileName),
             path: '/book.txt',
             title: 'book.txt',
@@ -165,6 +166,44 @@ void main() {
     expect(cache.loadSignatures.toSet(), hasLength(2));
   });
 
+  testWidgets(
+    'same-metadata replacement text and runtime use distinct cache signatures',
+    (tester) async {
+      final cache = _MemoryPageIndexCache();
+      final modified = DateTime.utc(2026, 7, 24);
+
+      Future<void> pumpText(String text) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ReaderView.test(
+              key: ValueKey(text),
+              path: '/book.txt',
+              title: 'book.txt',
+              text: text,
+              encoding: TextEncoding.utf8,
+              fileSize: 4,
+              modified: modified,
+              store: _MemoryStore(),
+              pageIndexCache: cache,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      await pumpText('AAAA');
+      await pumpText('BBBB');
+
+      expect(cache.loadSignatures.toSet(), hasLength(2));
+      final signature =
+          jsonDecode(cache.loadSignatures.last) as Map<String, dynamic>;
+      expect(signature['contentFingerprint'], isNotEmpty);
+      expect(signature['runtime'], isNotEmpty);
+      expect(signature['runtime'], contains('engine='));
+      expect(signature['paginationVersion'], isA<int>());
+    },
+  );
+
   testWidgets('같은 파일명의 글꼴이 바뀌면 새 페이지 캐시 서명을 사용한다', (tester) async {
     final root = (await tester.runAsync(
       () => Directory.systemTemp.createTemp('geulbom_font_version'),
@@ -187,7 +226,7 @@ void main() {
         ..updateSettings(const ReaderSettings(fontFileName: 'same.ttf'));
       await tester.pumpWidget(
         MaterialApp(
-          home: ReaderView(
+          home: ReaderView.test(
             key: ValueKey(key),
             path: '/book.txt',
             title: 'book.txt',
@@ -226,7 +265,7 @@ void main() {
         );
       await tester.pumpWidget(
         MaterialApp(
-          home: ReaderView(
+          home: ReaderView.test(
             key: ValueKey(paragraphIndent),
             path: '/book.txt',
             title: 'book.txt',
@@ -332,7 +371,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: ReaderView(
+          home: ReaderView.test(
             path: '/book.txt',
             title: 'book.txt',
             text: text,
@@ -369,7 +408,8 @@ void main() {
   testWidgets(
     'large files keep indexing so distant navigation is already available',
     (tester) async {
-      final text = List.filled(300 * 1024, 'a').join();
+      final line = '${List.filled(999, 'a').join()}\n';
+      final text = List.filled(308, line).join();
       final store = _MemoryStore();
       final producedPerCall = <int>[];
 
@@ -398,7 +438,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: ReaderView(
+          home: ReaderView.test(
             path: '/book.txt',
             title: 'book.txt',
             text: text,
@@ -444,7 +484,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -503,7 +543,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -545,7 +585,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -684,7 +724,7 @@ void main() {
       ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: _longText,
@@ -792,7 +832,7 @@ void main() {
       );
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -842,7 +882,7 @@ void main() {
       );
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -889,7 +929,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -931,7 +971,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1004,7 +1044,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1072,7 +1112,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1124,7 +1164,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1172,7 +1212,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1206,14 +1246,14 @@ void main() {
     );
   });
 
-  testWidgets('스크롤 위치는 보이는 청크의 화면 정렬값까지 복원한다', (tester) async {
+  testWidgets('스크롤 위치는 보이는 글자 위치를 그대로 복원한다', (tester) async {
     final text = List.filled(40 * 1024, '가').join();
     final store = _MemoryStore();
     await tester.binding.setSurfaceSize(const Size(320, 568));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     Widget buildReader(Key key) => MaterialApp(
-      home: ReaderView(
+      home: ReaderView.test(
         key: key,
         path: '/book.txt',
         title: 'book.txt',
@@ -1244,8 +1284,7 @@ void main() {
 
     final saved = store.document('/book.txt');
     expect(saved.offset, greaterThan(0));
-    expect(saved.scrollAlignment, greaterThan(0));
-    expect(saved.scrollAlignment, lessThan(1));
+    expect(saved.scrollAlignment, 0);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pump();
@@ -1255,8 +1294,10 @@ void main() {
     final restoredList = tester.widget<ScrollablePositionedList>(
       find.byType(ScrollablePositionedList),
     );
-    expect(restoredList.initialScrollIndex, greaterThan(0));
-    expect(restoredList.initialAlignment, closeTo(saved.scrollAlignment, .01));
+    expect(restoredList.initialScrollIndex, 0);
+    expect(restoredList.initialAlignment, 0);
+    expect(restoredList.scrollOffsetController, isNotNull);
+    expect(store.document('/book.txt').offset, saved.offset);
   });
 
   testWidgets('대기 중 사용자가 스크롤하면 오래된 페이지 이동을 취소한다', (tester) async {
@@ -1275,7 +1316,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: _longText,
@@ -1347,7 +1388,7 @@ void main() {
     Future<void> pumpEncoding(TextEncoding encoding) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: ReaderView(
+          home: ReaderView.test(
             key: ValueKey(encoding),
             path: '/book.txt',
             title: 'book.txt',
@@ -1381,7 +1422,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1441,7 +1482,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: ReaderView(
+          home: ReaderView.test(
             path: '/book.txt',
             title: 'book.txt',
             text: text,
@@ -1509,7 +1550,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1568,7 +1609,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1668,7 +1709,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1754,7 +1795,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -1814,7 +1855,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: ReaderView(
+          home: ReaderView.test(
             path: '/book.txt',
             title: 'book.txt',
             text: text,
@@ -1880,7 +1921,7 @@ void main() {
       MaterialApp(
         home: MediaQuery(
           data: const MediaQueryData(disableAnimations: true),
-          child: ReaderView(
+          child: ReaderView.test(
             path: '/book.txt',
             title: 'book.txt',
             text: _longText,
@@ -1922,7 +1963,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -2011,7 +2052,7 @@ void main() {
   });
 
   testWidgets(
-    'auto mode hides a stale page window while resolving the scroll position',
+    'auto mode immediately replaces a stale page window at the scroll position',
     (tester) async {
       final line = '${List.filled(80, 'x').join()}\n';
       var text = List.filled(4000, line).join();
@@ -2036,7 +2077,7 @@ void main() {
 
       await tester.pumpWidget(
         MaterialApp(
-          home: ReaderView(
+          home: ReaderView.test(
             path: '/book.txt',
             title: 'book.txt',
             text: text,
@@ -2101,7 +2142,8 @@ void main() {
 
       expect(windowCalls, 2);
       expect(find.textContaining('DISTANT!'), findsNothing);
-      expect(find.text('페이지를 계산하고 있습니다.'), findsOneWidget);
+      expect(find.textContaining('BEGIN!!!'), findsOneWidget);
+      expect(find.text('페이지를 계산하고 있습니다.'), findsNothing);
       expect(store.document('/book.txt').offset, 0);
 
       nearbyWindow.complete(const [
@@ -2153,7 +2195,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -2194,7 +2236,7 @@ void main() {
     final store = _MemoryStore();
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: '가나다라마바사',
@@ -2654,7 +2696,7 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: ReaderView(
+        home: ReaderView.test(
           path: '/book.txt',
           title: 'book.txt',
           text: text,
@@ -3179,7 +3221,7 @@ Future<void> _pumpAutoReader(
   final text = allText.substring(0, pages.last.end);
   await tester.pumpWidget(
     MaterialApp(
-      home: ReaderView(
+      home: ReaderView.test(
         path: '/book.txt',
         title: 'book.txt',
         text: text,
@@ -3228,7 +3270,7 @@ Future<void> _pumpReader(
 }) async {
   await tester.pumpWidget(
     MaterialApp(
-      home: ReaderView(
+      home: ReaderView.test(
         path: '/book.txt',
         title: 'book.txt',
         text: text,

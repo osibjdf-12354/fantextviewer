@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -80,7 +81,7 @@ void main() {
     expect(notifications, 2);
   });
 
-  test('search traverses forward and backward with wrapping', () {
+  test('search traverses forward and backward with wrapping', () async {
     const text = '하나 찾기 둘 찾기 셋';
     final store = AppStore(File('unused'));
     final controller = ReaderController(
@@ -91,10 +92,10 @@ void main() {
     );
     addTearDown(controller.dispose);
 
-    expect(controller.startSearch('찾기')?.start, 3);
-    expect(controller.nextSearchResult()?.start, 8);
-    expect(controller.nextSearchResult()?.start, 3);
-    expect(controller.previousSearchResult()?.start, 8);
+    expect((await controller.startSearch('찾기'))?.start, 3);
+    expect((await controller.nextSearchResult())?.start, 8);
+    expect((await controller.nextSearchResult())?.start, 3);
+    expect((await controller.previousSearchResult())?.start, 8);
     expect(controller.activeSearchMatch?.length, 2);
 
     controller.clearSearch();
@@ -102,7 +103,7 @@ void main() {
     expect(controller.searchQuery, isEmpty);
   });
 
-  test('search reports no match without moving the reading position', () {
+  test('search reports no match without moving the reading position', () async {
     const text = '검색할 본문';
     final store = AppStore(File('unused'))
       ..updateProgress('/book.txt', offset: 4, documentLength: text.length);
@@ -114,10 +115,28 @@ void main() {
     );
     addTearDown(controller.dispose);
 
-    expect(controller.startSearch('없음'), isNull);
+    expect(await controller.startSearch('없음'), isNull);
     expect(controller.offset, 4);
     expect(controller.searchQuery, '없음');
     expect(controller.activeSearchMatch, isNull);
+  });
+
+  test('search leaves the UI event loop before scanning text', () async {
+    final controller = ReaderController(
+      store: AppStore(File('unused')),
+      path: '/book.txt',
+      textLength: 8 * 1024 * 1024,
+      text: List.filled(8 * 1024 * 1024, 'a').join(),
+    );
+    addTearDown(controller.dispose);
+    var eventLoopAdvanced = false;
+    Timer.run(() => eventLoopAdvanced = true);
+
+    final operation = controller.startSearch('not present');
+
+    expect(operation, isA<Future<ReaderSearchMatch?>>());
+    expect(await operation, isNull);
+    expect(eventLoopAdvanced, isTrue);
   });
 
   test('pagination progress notifies only the narrow activity listenable', () {

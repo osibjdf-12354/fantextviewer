@@ -15,6 +15,7 @@ class AppStore extends ChangeNotifier {
   AppData get data => _data;
   Object? lastLoadError;
   StackTrace? lastLoadStackTrace;
+  File? recoveryFile;
 
   Future<void> load() async {
     if (!await file.exists()) return;
@@ -24,12 +25,31 @@ class AppStore extends ChangeNotifier {
       _data = AppData.fromJson(json);
       lastLoadError = null;
       lastLoadStackTrace = null;
+      recoveryFile = null;
     } catch (error, stackTrace) {
       lastLoadError = error;
       lastLoadStackTrace = stackTrace;
-      await file.rename(await _nextBrokenPath());
+      recoveryFile = await file.rename(await _nextBrokenPath());
       _data = AppData();
     }
+    notifyListeners();
+  }
+
+  Future<void> importState(File source) async {
+    final decoded =
+        jsonDecode(await source.readAsString()) as Map<String, dynamic>;
+    final imported = AppData.fromJson(decoded);
+    final previous = _data;
+    _data = imported;
+    try {
+      await save();
+    } catch (_) {
+      _data = previous;
+      rethrow;
+    }
+    lastLoadError = null;
+    lastLoadStackTrace = null;
+    recoveryFile = null;
     notifyListeners();
   }
 
@@ -67,7 +87,7 @@ class AppStore extends ChangeNotifier {
   }
 
   DocumentState document(String path) {
-    return _data.documents.putIfAbsent(path, () => DocumentState(path: path));
+    return _data.documents[path] ?? DocumentState(path: path);
   }
 
   List<DocumentState> get recentDocuments {
@@ -79,7 +99,7 @@ class AppStore extends ChangeNotifier {
   }
 
   void updateSettings(ReaderSettings settings) {
-    _data.settings = settings;
+    _data = _data.copyWith(settings: settings);
     notifyListeners();
   }
 
@@ -90,9 +110,13 @@ class AppStore extends ChangeNotifier {
     DateTime? openedAt,
   }) {
     final state = document(path);
-    state.lastOpened = (openedAt ?? DateTime.now()).toUtc().toIso8601String();
-    state.fileSize = fileSize ?? state.fileSize;
-    state.modified = modified?.toUtc().toIso8601String() ?? state.modified;
+    _putDocument(
+      state.copyWith(
+        lastOpened: (openedAt ?? DateTime.now()).toUtc().toIso8601String(),
+        fileSize: fileSize ?? state.fileSize,
+        modified: modified?.toUtc().toIso8601String() ?? state.modified,
+      ),
+    );
     notifyListeners();
   }
 
@@ -106,14 +130,16 @@ class AppStore extends ChangeNotifier {
     final changed =
         (state.fileSize != null && state.fileSize != fileSize) ||
         (state.modified != null && state.modified != modifiedUtc);
-    if (changed) {
-      state.offset = 0;
-      state.scrollAlignment = 0;
-      state.encoding = null;
-      state.bookmarks.clear();
-    }
-    state.fileSize = fileSize;
-    state.modified = modifiedUtc;
+    _putDocument(
+      state.copyWith(
+        offset: changed ? 0 : state.offset,
+        scrollAlignment: changed ? 0 : state.scrollAlignment,
+        encoding: changed ? null : state.encoding,
+        bookmarks: changed ? const [] : state.bookmarks,
+        fileSize: fileSize,
+        modified: modifiedUtc,
+      ),
+    );
     return changed;
   }
 
@@ -124,32 +150,50 @@ class AppStore extends ChangeNotifier {
     int? documentLength,
   }) {
     final state = document(path);
-    state.offset = offset.clamp(0, documentLength ?? offset);
-    state.scrollAlignment = scrollAlignment.clamp(0, 1);
+    _putDocument(
+      state.copyWith(
+        offset: offset.clamp(0, documentLength ?? offset),
+        scrollAlignment: scrollAlignment.clamp(0, 1),
+      ),
+    );
   }
 
   void addBookmark(String path, Bookmark bookmark) {
     final state = document(path);
     if (state.bookmarks.any((saved) => saved.offset == bookmark.offset)) return;
-    state.bookmarks.add(bookmark);
-    state.bookmarks.sort((a, b) => a.offset.compareTo(b.offset));
+    final bookmarks = [...state.bookmarks, bookmark]
+      ..sort((a, b) => a.offset.compareTo(b.offset));
+    _putDocument(state.copyWith(bookmarks: bookmarks));
     notifyListeners();
   }
 
   void removeBookmark(String path, int offset) {
-    document(
-      path,
-    ).bookmarks.removeWhere((bookmark) => bookmark.offset == offset);
+    final state = _data.documents[path];
+    if (state == null) return;
+    final bookmarks = state.bookmarks
+        .where((bookmark) => bookmark.offset != offset)
+        .toList();
+    if (bookmarks.length == state.bookmarks.length) return;
+    _putDocument(state.copyWith(bookmarks: bookmarks));
     notifyListeners();
   }
 
   void setEncoding(String path, String? encoding) {
-    document(path).encoding = encoding;
+    _putDocument(document(path).copyWith(encoding: encoding));
     notifyListeners();
   }
 
   void removeDocument(String path) {
-    _data.documents.remove(path);
+    if (!_data.documents.containsKey(path)) return;
+    final documents = Map<String, DocumentState>.of(_data.documents)
+      ..remove(path);
+    _data = _data.copyWith(documents: documents);
     notifyListeners();
+  }
+
+  void _putDocument(DocumentState document) {
+    _data = _data.copyWith(
+      documents: {..._data.documents, document.path: document},
+    );
   }
 }

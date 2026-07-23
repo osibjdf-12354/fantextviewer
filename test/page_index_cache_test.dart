@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geulbom/page_index_cache.dart';
 import 'package:geulbom/text_paginator.dart';
@@ -93,7 +94,8 @@ void main() {
   });
 
   test('returns null instead of throwing for malformed JSON', () async {
-    await cache.save(
+    final quietCache = PageIndexCache(directory: directory, onError: (_, _) {});
+    await quietCache.save(
       signature: 'book-a',
       textLength: 9,
       pages: const [TextPage(start: 0, end: 9)],
@@ -101,7 +103,7 @@ void main() {
     final file = directory.listSync().whereType<File>().single;
     await file.writeAsString('{broken');
 
-    expect(await cache.load(signature: 'book-a', textLength: 9), isNull);
+    expect(await quietCache.load(signature: 'book-a', textLength: 9), isNull);
   });
 
   test(
@@ -123,6 +125,27 @@ void main() {
       expect(await cache.load(signature: 'book-a', textLength: 9), isNull);
       expect(errors, hasLength(1));
       expect(errors.single, isA<FormatException>());
+    },
+  );
+
+  test(
+    'default cache use reports failures instead of swallowing them',
+    () async {
+      final reported = <FlutterErrorDetails>[];
+      final previous = FlutterError.onError;
+      FlutterError.onError = reported.add;
+      addTearDown(() => FlutterError.onError = previous);
+      await cache.save(
+        signature: 'book-a',
+        textLength: 9,
+        pages: const [TextPage(start: 0, end: 9)],
+      );
+      final file = directory.listSync().whereType<File>().single;
+      await file.writeAsString('{broken');
+
+      expect(await cache.load(signature: 'book-a', textLength: 9), isNull);
+      expect(reported, hasLength(1));
+      expect(reported.single.exception, isA<FormatException>());
     },
   );
 

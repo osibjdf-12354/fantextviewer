@@ -49,6 +49,7 @@ class FontLibrary {
   final Directory directory;
   final FontRegistrar registerFont;
   final FontCopier copyFont;
+  // ponytail: Flutter cannot unload fonts; retain names until process restart.
   final Set<String> _loadedFileNames = {};
   final Map<String, String> _versions = {};
 

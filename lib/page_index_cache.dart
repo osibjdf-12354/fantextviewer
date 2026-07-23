@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'text_paginator.dart';
@@ -8,10 +9,11 @@ import 'text_paginator.dart';
 typedef CacheErrorHandler = void Function(Object error, StackTrace stackTrace);
 
 class PageIndexCache {
-  PageIndexCache({this.directory, this.onError});
+  PageIndexCache({this.directory, CacheErrorHandler? onError})
+    : onError = onError ?? _reportCacheError;
 
   final Directory? directory;
-  final CacheErrorHandler? onError;
+  final CacheErrorHandler onError;
 
   static const currentSchemaVersion = 1;
 
@@ -48,7 +50,7 @@ class PageIndexCache {
           ),
       ];
     } catch (error, stackTrace) {
-      onError?.call(error, stackTrace);
+      onError(error, stackTrace);
       return null;
     }
   }
@@ -76,13 +78,13 @@ class PageIndexCache {
       await temporary.rename(file.path);
       await _prune(file.parent, file);
     } catch (error, stackTrace) {
-      onError?.call(error, stackTrace);
+      onError(error, stackTrace);
       try {
         if (temporary != null && await temporary.exists()) {
           await temporary.delete();
         }
       } catch (cleanupError, cleanupStackTrace) {
-        onError?.call(cleanupError, cleanupStackTrace);
+        onError(cleanupError, cleanupStackTrace);
       }
     }
   }
@@ -118,6 +120,17 @@ class PageIndexCache {
       await record.$1.delete();
     }
   }
+}
+
+void _reportCacheError(Object error, StackTrace stackTrace) {
+  FlutterError.reportError(
+    FlutterErrorDetails(
+      exception: error,
+      stack: stackTrace,
+      library: 'geulbom page cache',
+      context: ErrorDescription('while reading or writing a page index'),
+    ),
+  );
 }
 
 List<int>? _validatedStarts(Object? value, int textLength) {

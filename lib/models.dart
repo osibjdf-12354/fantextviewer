@@ -303,16 +303,43 @@ class DocumentState {
     this.fileSize,
     this.modified,
     List<Bookmark>? bookmarks,
-  }) : bookmarks = bookmarks ?? [];
+  }) : bookmarks = List.unmodifiable(bookmarks ?? const []);
 
   final String path;
-  int offset;
-  double scrollAlignment;
-  String? encoding;
-  String lastOpened;
-  int? fileSize;
-  String? modified;
+  final int offset;
+  final double scrollAlignment;
+  final String? encoding;
+  final String lastOpened;
+  final int? fileSize;
+  final String? modified;
   final List<Bookmark> bookmarks;
+
+  DocumentState copyWith({
+    int? offset,
+    double? scrollAlignment,
+    Object? encoding = _unchanged,
+    String? lastOpened,
+    Object? fileSize = _unchanged,
+    Object? modified = _unchanged,
+    List<Bookmark>? bookmarks,
+  }) {
+    return DocumentState(
+      path: path,
+      offset: offset ?? this.offset,
+      scrollAlignment: scrollAlignment ?? this.scrollAlignment,
+      encoding: identical(encoding, _unchanged)
+          ? this.encoding
+          : encoding as String?,
+      lastOpened: lastOpened ?? this.lastOpened,
+      fileSize: identical(fileSize, _unchanged)
+          ? this.fileSize
+          : fileSize as int?,
+      modified: identical(modified, _unchanged)
+          ? this.modified
+          : modified as String?,
+      bookmarks: bookmarks ?? this.bookmarks,
+    );
+  }
 
   Map<String, Object?> toJson() => {
     'path': path,
@@ -358,12 +385,20 @@ class DocumentState {
 class AppData {
   AppData({ReaderSettings? settings, Map<String, DocumentState>? documents})
     : settings = settings ?? const ReaderSettings(),
-      documents = documents ?? {};
+      documents = Map.unmodifiable(documents ?? const {});
 
-  ReaderSettings settings;
+  final ReaderSettings settings;
   final Map<String, DocumentState> documents;
 
   static const currentSchemaVersion = 2;
+
+  AppData copyWith({
+    ReaderSettings? settings,
+    Map<String, DocumentState>? documents,
+  }) => AppData(
+    settings: settings ?? this.settings,
+    documents: documents ?? this.documents,
+  );
 
   Map<String, Object> toJson() => {
     'schemaVersion': currentSchemaVersion,
@@ -400,3 +435,5 @@ class AppData {
     );
   }
 }
+
+const _unchanged = Object();
