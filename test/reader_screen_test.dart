@@ -1596,16 +1596,16 @@ void main() {
         .jumpTo(index: chunks.length - 2);
     await tester.pumpAndSettle();
     final offset = store.document('/book.txt').offset;
-    final page = int.parse(
-      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data!,
+    expect(
+      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
+      '계산 중',
     );
-    expect(page, greaterThan(100));
 
     await _enableAutoMode(tester);
 
     expect(
       tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
-      '$page',
+      '계산 중',
     );
     expect(store.document('/book.txt').offset, offset);
 
@@ -1636,6 +1636,118 @@ void main() {
     );
     expect(store.document('/book.txt').offset, nextOffset);
   });
+
+  testWidgets(
+    'auto mode hides a stale page window while resolving the scroll position',
+    (tester) async {
+      final line = '${List.filled(80, 'x').join()}\n';
+      var text = List.filled(4000, line).join();
+      final chunks = splitText(text, maxChars: 700);
+      final distantOffset = chunks[chunks.length - 2].start;
+      text = text.replaceRange(0, 8, 'BEGIN!!!');
+      text = text.replaceRange(
+        distantOffset,
+        distantOffset + 8,
+        'DISTANT!',
+      );
+      final pagination = Completer<List<TextPage>>();
+      final nearbyWindow = Completer<List<TextPage>>();
+      addTearDown(() {
+        if (!pagination.isCompleted) pagination.complete(const []);
+        if (!nearbyWindow.isCompleted) nearbyWindow.complete(const []);
+      });
+      var windowCalls = 0;
+      final store = _MemoryStore()
+        ..updateSettings(const ReaderSettings(autoPageIntervalSeconds: 60))
+        ..updateProgress(
+          '/book.txt',
+          offset: distantOffset,
+          documentLength: text.length,
+        );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderView(
+            path: '/book.txt',
+            title: 'book.txt',
+            text: text,
+            encoding: TextEncoding.utf8,
+            store: store,
+            paginator:
+                ({
+                  required text,
+                  required size,
+                  required style,
+                  required paragraphIndent,
+                  onProgress,
+                  onBatch,
+                  onLayout,
+                  isCancelled,
+                }) => pagination.future,
+            windowPaginator:
+                ({
+                  required text,
+                  required startOffset,
+                  required size,
+                  required style,
+                  required paragraphIndent,
+                  onLayout,
+                  isCancelled,
+                }) {
+                  windowCalls++;
+                  if (windowCalls > 1) return nearbyWindow.future;
+                  return Future.value([
+                    TextPage(
+                      start: distantOffset - 100,
+                      end: distantOffset,
+                    ),
+                    TextPage(
+                      start: distantOffset,
+                      end: math.min(distantOffset + 100, text.length),
+                    ),
+                  ]);
+                },
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await _enableAutoMode(tester);
+
+      expect(windowCalls, 1);
+      expect(find.textContaining('DISTANT!'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('auto-mode-switch')));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      tester
+          .widget<ScrollablePositionedList>(
+            find.byType(ScrollablePositionedList),
+          )
+          .itemScrollController!
+          .jumpTo(index: 0);
+      await tester.pumpAndSettle();
+      expect(store.document('/book.txt').offset, 0);
+
+      await _enableAutoMode(tester, settle: false);
+
+      expect(windowCalls, 2);
+      expect(find.textContaining('DISTANT!'), findsNothing);
+      expect(find.text('페이지를 계산하고 있습니다.'), findsOneWidget);
+      expect(store.document('/book.txt').offset, 0);
+
+      nearbyWindow.complete(const [
+        TextPage(start: 0, end: 100),
+        TextPage(start: 100, end: 200),
+      ]);
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('BEGIN!!!'), findsOneWidget);
+      expect(store.document('/book.txt').offset, 0);
+    },
+  );
 
   testWidgets('manual page turn restarts the full auto interval', (
     tester,
@@ -2668,12 +2780,21 @@ Future<void> _pumpAutoReader(
   await tester.pumpAndSettle();
 }
 
-Future<void> _enableAutoMode(WidgetTester tester) async {
+Future<void> _enableAutoMode(
+  WidgetTester tester, {
+  bool settle = true,
+}) async {
   await tester.tap(find.byIcon(Icons.menu));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('auto-mode-switch')));
   await tester.binding.handlePopRoute();
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+    await tester.pump(kThemeAnimationDuration);
+    await tester.pump();
+  }
 }
 
 Future<void> _pumpReader(

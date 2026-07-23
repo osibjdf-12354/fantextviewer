@@ -853,6 +853,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         });
       } else {
         final total = _displayTotalPages;
+        setState(() => _pageIndex = null);
         unawaited(
           _jumpToPageNumber(
             estimatedPageForOffset(
@@ -877,6 +878,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       });
     } else {
       final totalPages = _displayTotalPages;
+      setState(() => _pageIndex = null);
       unawaited(
         _jumpToPageNumber(
           estimatedPageForOffset(
@@ -1002,9 +1004,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       _pendingScrollOffset = _offset;
     }
     setState(() => _autoMode = enabled);
-    if (enabled && (_pageWindow != null || _pages != null)) {
-      _jumpToOffset(_offset);
-    }
+    if (enabled) _jumpToOffset(_offset);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _restartAutoTimer();
     });
