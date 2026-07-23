@@ -22,6 +22,7 @@ abstract final class AppStrings {
   static const folderEmpty = '표시할 폴더나 TXT 파일이 없습니다.';
   static const chooseFolderOrFile = 'TXT 파일이 있는 폴더를 선택하거나\n파일 하나를 바로 여세요.';
   static const chooseOneFile = '파일 하나 선택';
+  static const folderAccessRequired = '폴더 내용을 보려면 설정에서 모든 파일 접근을 허용해 주세요.';
 
   static const missingFileTitle = '파일을 찾을 수 없습니다';
   static const missingFileBody = '파일이 이동되거나 삭제되었습니다. 최근 목록에서 지울까요?';

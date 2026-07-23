@@ -2,12 +2,14 @@ import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'strings.dart';
 
 enum BrowserSort { name, modified }
 
 typedef DirectoryPicker = Future<String?> Function({String? initialDirectory});
+typedef DirectoryAccessRequester = Future<bool> Function();
 typedef BrowserEntryLoader =
     Future<List<BrowserEntry>> Function(Directory directory, BrowserSort sort);
 
@@ -87,17 +89,27 @@ Future<String?> pickTextDirectory({String? initialDirectory}) {
   return getDirectoryPath(initialDirectory: initialDirectory);
 }
 
+Future<bool> requestTextDirectoryAccess() async {
+  if (!Platform.isAndroid) return true;
+  final manageStatus = await Permission.manageExternalStorage.request();
+  if (manageStatus.isGranted) return true;
+  if (!manageStatus.isRestricted) return false;
+  return (await Permission.storage.request()).isGranted;
+}
+
 class FileBrowserScreen extends StatefulWidget {
   const FileBrowserScreen({
     super.key,
     required this.onOpenFile,
     this.initialDirectory,
+    this.requestDirectoryAccess = requestTextDirectoryAccess,
     this.pickDirectory = pickTextDirectory,
     this.loadEntries = listTextEntries,
   });
 
   final ValueChanged<String> onOpenFile;
   final Directory? initialDirectory;
+  final DirectoryAccessRequester requestDirectoryAccess;
   final DirectoryPicker pickDirectory;
   final BrowserEntryLoader loadEntries;
 
@@ -135,6 +147,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
 
   Future<void> _chooseDirectory() async {
     try {
+      if (!await widget.requestDirectoryAccess()) {
+        if (!mounted) return;
+        setState(() => _error = AppStrings.folderAccessRequired);
+        return;
+      }
       final path = await widget.pickDirectory(
         initialDirectory: _directory?.path,
       );

@@ -24,7 +24,8 @@ class PageIndexCache {
       if (!await file.exists()) return null;
       final record = jsonDecode(await file.readAsString());
       if (record is! Map<String, dynamic> ||
-          record['schemaVersion'] != currentSchemaVersion ||
+          (record['schemaVersion'] != null &&
+              record['schemaVersion'] != currentSchemaVersion) ||
           record['signature'] != signature ||
           record['textLength'] != textLength ||
           record['starts'] is! List ||

@@ -367,7 +367,7 @@ void main() {
   );
 
   testWidgets(
-    'large scroll mode indexes a bounded prefix until distant navigation',
+    'large files keep indexing so distant navigation is already available',
     (tester) async {
       final text = List.filled(300 * 1024, 'a').join();
       final store = _MemoryStore();
@@ -410,7 +410,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(producedPerCall, [32]);
+      expect(producedPerCall, [80]);
 
       await tester.tap(find.byIcon(Icons.menu));
       await tester.pumpAndSettle();
@@ -420,7 +420,7 @@ void main() {
       await tester.tap(find.text('이동'));
       await tester.pumpAndSettle();
 
-      expect(producedPerCall, [32, 80]);
+      expect(producedPerCall, [80]);
       expect(store.document('/book.txt').offset, 59000);
     },
   );
@@ -531,7 +531,7 @@ void main() {
     );
   });
 
-  testWidgets('계산 중에도 페이지 번호로 즉시 이동한다', (tester) async {
+  testWidgets('계산 중에도 예상 위치의 페이지 창으로 즉시 이동한다', (tester) async {
     final text = List.generate(400, (index) => '문장 $index 가나다라\n').join();
     final exactPages = <TextPage>[
       for (var start = 0; start < text.length; start += 100)
@@ -541,6 +541,7 @@ void main() {
       ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
     final completion = Completer<List<TextPage>>();
     PaginationBatchCallback? emitBatch;
+    var windowCalls = 0;
 
     await tester.pumpWidget(
       MaterialApp(
@@ -565,6 +566,19 @@ void main() {
                 onBatch?.call([exactPages.first]);
                 return completion.future;
               },
+          windowPaginator:
+              ({
+                required text,
+                required startOffset,
+                required size,
+                required style,
+                required paragraphIndent,
+                onLayout,
+                isCancelled,
+              }) async {
+                windowCalls++;
+                return exactPages.take(24).toList();
+              },
         ),
       ),
     );
@@ -579,8 +593,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(completion.isCompleted, isFalse);
-    expect(store.document('/book.txt').offset, 0);
-    expect(find.text('5페이지까지 계산하고 있습니다. 계산되는 즉시 이동합니다.'), findsOneWidget);
+    expect(windowCalls, 1);
+    expect(store.document('/book.txt').offset, exactPages[4].start);
+    expect(find.text('5페이지까지 계산하고 있습니다. 계산되는 즉시 이동합니다.'), findsNothing);
 
     emitBatch?.call(exactPages.sublist(1, 5));
     await tester.pump();
@@ -960,7 +975,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('비균일한 대형 파일도 요청한 1716페이지의 정확한 색인을 기다린다', (tester) async {
+  testWidgets('비균일한 대형 파일도 추정 위치로 즉시 이동한 뒤 정확한 색인으로 보정한다', (tester) async {
     const textLength = 1299500;
     const totalPages = 12995;
     const requestedPage = 1716;
@@ -1026,7 +1041,7 @@ void main() {
     await tester.tap(find.text('이동'));
     await tester.pumpAndSettle();
 
-    expect(store.document('/book.txt').offset, 0);
+    expect(store.document('/book.txt').offset, (requestedPage - 1) * 100);
 
     emitBatch?.call(exactPages.sublist(8, requestedPage));
     await tester.pump();

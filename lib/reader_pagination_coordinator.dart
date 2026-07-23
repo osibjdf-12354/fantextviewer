@@ -65,7 +65,6 @@ class ReaderPaginationCoordinator {
   });
 
   static const eagerTextLimit = 256 * 1024;
-  static const initialPageBudget = 32;
 
   final String text;
   final String path;
@@ -97,11 +96,8 @@ class ReaderPaginationCoordinator {
   String? _paginationKey;
   int _paginationGeneration = 0;
   bool _paginationComplete = false;
-  bool _fullPaginationRequested = false;
   Size? _pageSize;
   TextStyle? _textStyle;
-  String? _fontFileName;
-  String? _fontFileVersion;
   bool _disposed = false;
 
   List<TextPage>? get pages => _pages;
@@ -109,7 +105,6 @@ class ReaderPaginationCoordinator {
   ReaderPageWindow? get pageWindow => _pageWindow;
   int get displayPageNumber => _displayPageNumber;
   bool get complete => _paginationComplete;
-  bool get fullPaginationRequested => _fullPaginationRequested;
   List<TextPage>? get completePages => complete ? pages : null;
 
   int get displayTotalPages {
@@ -169,9 +164,6 @@ class ReaderPaginationCoordinator {
         : pageWindow!.firstPage + index;
     onViewChanged();
     onSetOffset(activePages[index].start);
-    if (pageWindow == null && !complete && index >= activePages.length - 4) {
-      requestFullPagination();
-    }
     onRestartAuto();
   }
 
@@ -183,8 +175,6 @@ class ReaderPaginationCoordinator {
   }) async {
     _pageSize = size;
     _textStyle = style;
-    _fontFileName = fontFileName;
-    _fontFileVersion = fontFileVersion;
     final currentSettings = settings();
     final key = jsonEncode({
       'algorithm': 6,
@@ -201,8 +191,6 @@ class ReaderPaginationCoordinator {
       'lineHeight': currentSettings.lineHeight,
       'horizontalPadding': currentSettings.horizontalPadding,
       'paragraphIndent': currentSettings.paragraphIndent,
-      'fullPagination':
-          fullPaginationRequested || currentSettings.showTotalPages,
     });
     if (_paginationKey == key || _disposed) return;
     _paginationKey = key;
@@ -229,10 +217,6 @@ class ReaderPaginationCoordinator {
       if (!_isCurrent(generation)) return;
     }
     final progressivePages = <TextPage>[];
-    final bounded =
-        text.length > eagerTextLimit &&
-        !fullPaginationRequested &&
-        !currentSettings.showTotalPages;
     final calculatedPages = await paginator(
       text: text,
       size: size,
@@ -248,9 +232,7 @@ class ReaderPaginationCoordinator {
         progressivePages.addAll(batch);
         _setPaginationPages(progressivePages, complete: false);
       },
-      isCancelled: () =>
-          !_isCurrent(generation) ||
-          (bounded && progressivePages.length >= initialPageBudget),
+      isCancelled: () => !_isCurrent(generation),
     );
     if (!_isCurrent(generation)) return;
     final isComplete =
@@ -268,28 +250,22 @@ class ReaderPaginationCoordinator {
     }
   }
 
-  void requestFullPagination() {
-    if (fullPaginationRequested || text.length <= eagerTextLimit) return;
-    final size = _pageSize;
-    final style = _textStyle;
-    if (size == null || style == null) return;
-    _fullPaginationRequested = true;
-    _paginationKey = null;
-    if (_isPaged) onViewChanged();
-    unawaited(
-      ensurePages(
-        size: size,
-        style: style,
-        fontFileName: _fontFileName,
-        fontFileVersion: _fontFileVersion,
-      ),
-    );
-  }
-
   void navigateToOffset(int offset) {
     _navigationGeneration++;
     _pendingTargetPage = null;
     if (!_isPaged) return;
+    final indexedPages = pages;
+    if (indexedPages != null &&
+        indexedPages.isNotEmpty &&
+        (complete || offset < indexedPages.last.end)) {
+      _pageWindowGeneration++;
+      _pageWindow = null;
+      final page = pageForOffset(indexedPages, offset);
+      _pageIndex = page;
+      _displayPageNumber = page + 1;
+      onViewChanged();
+      return;
+    }
     final window = pageWindow;
     if (window != null) {
       if (offset >= window.pages.first.start &&
@@ -314,28 +290,18 @@ class ReaderPaginationCoordinator {
       }
       return;
     }
-    final indexedPages = pages;
-    if (indexedPages != null &&
-        indexedPages.isNotEmpty &&
-        (complete || offset < indexedPages.last.end)) {
-      final page = pageForOffset(indexedPages, offset);
-      _pageIndex = page;
-      _displayPageNumber = page + 1;
-      onViewChanged();
-    } else {
-      _pageIndex = null;
-      onViewChanged();
-      unawaited(
-        jumpToPageNumber(
-          estimatedPageForOffset(
-            offset,
-            textLength: text.length,
-            totalPages: displayTotalPages,
-          ),
-          sourceOffset: offset,
+    _pageIndex = null;
+    onViewChanged();
+    unawaited(
+      jumpToPageNumber(
+        estimatedPageForOffset(
+          offset,
+          textLength: text.length,
+          totalPages: displayTotalPages,
         ),
-      );
-    }
+        sourceOffset: offset,
+      ),
+    );
   }
 
   Future<void> jumpToPageNumber(int page, {int? sourceOffset}) async {
@@ -365,8 +331,20 @@ class ReaderPaginationCoordinator {
     if (sourceOffset == null) {
       _navigationGeneration++;
       _pendingTargetPage = page;
-      requestFullPagination();
-      onMessage(AppStrings.calculatingThroughPage(page));
+      if (page > displayTotalPages) {
+        onMessage(AppStrings.calculatingThroughPage(page));
+        return;
+      }
+      final measuredPages = pages;
+      final charactersPerPage = measuredPages == null || measuredPages.isEmpty
+          ? math.max(1, fallbackCharactersPerPage()).toInt()
+          : math
+                .max(1, (measuredPages.last.end / measuredPages.length).round())
+                .toInt();
+      final estimatedOffset = ((page - 1) * charactersPerPage)
+          .clamp(0, math.max(0, text.length - 1))
+          .toInt();
+      await jumpToPageNumber(page, sourceOffset: estimatedOffset);
       return;
     }
 
@@ -439,10 +417,9 @@ class ReaderPaginationCoordinator {
     onRestartAuto();
   }
 
-  void resetForSettings({required bool showTotalPages}) {
+  void resetForSettings() {
     _paginationGeneration++;
     _pageWindowGeneration++;
-    _fullPaginationRequested = showTotalPages;
     _paginationKey = null;
     _pages = null;
     _pageWindow = null;
@@ -496,6 +473,13 @@ class ReaderPaginationCoordinator {
       _pageWindowGeneration++;
       _pageWindow = null;
       _pageIndex = calculatedPages.isEmpty ? null : initialPage;
+      _displayPageNumber = initialPage + 1;
+    } else if (pageWindow != null &&
+        calculatedPages.isNotEmpty &&
+        calculatedPages.last.end > currentOffset()) {
+      _pageWindowGeneration++;
+      _pageWindow = null;
+      _pageIndex = initialPage;
       _displayPageNumber = initialPage + 1;
     } else if (pageWindow == null &&
         pageIndex == null &&

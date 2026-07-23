@@ -908,11 +908,6 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       _showMessage(AppStrings.lastPageAutoStopped);
       return;
     }
-    if (_pagination.pageWindow == null &&
-        !_pagination.complete &&
-        index >= pages.length - 4) {
-      _pagination.requestFullPagination();
-    }
     if (index + 1 >= pages.length) return;
     _controller.scheduleAutoAdvance(
       Duration(seconds: _settings.autoPageIntervalSeconds),
@@ -1141,7 +1136,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       _scrollChunkLayoutKey = null;
       _pendingScrollChunkLayoutKey = null;
     });
-    _pagination.resetForSettings(showTotalPages: settings.showTotalPages);
+    _pagination.resetForSettings();
     _controller.applySettings(settings);
     _syncWakelock();
   }

@@ -104,18 +104,23 @@ void main() {
     expect(entries.map((entry) => entry.name), ['good.txt']);
   });
 
-  testWidgets('starts with a system directory picker instead of permissions', (
+  testWidgets('requests directory access before opening the system picker', (
     tester,
   ) async {
     final directory = Directory(
       Platform.isWindows ? r'C:\selected' : '/selected',
     );
+    var accessCalls = 0;
     var pickerCalls = 0;
 
     await tester.pumpWidget(
       MaterialApp(
         home: FileBrowserScreen(
           onOpenFile: (_) {},
+          requestDirectoryAccess: () async {
+            accessCalls++;
+            return true;
+          },
           pickDirectory: ({initialDirectory}) async {
             pickerCalls++;
             return directory.path;
@@ -135,11 +140,11 @@ void main() {
     await tester.pump();
 
     expect(find.text('폴더 선택'), findsOneWidget);
-    expect(find.textContaining('모든 파일 접근 권한'), findsNothing);
     await tester.tap(find.text('폴더 선택'));
     await tester.pump();
     await tester.pump();
 
+    expect(accessCalls, 1);
     expect(pickerCalls, 1);
     expect(find.text('book.txt'), findsOneWidget);
   });

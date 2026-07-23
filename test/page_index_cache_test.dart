@@ -145,6 +145,23 @@ void main() {
     },
   );
 
+  test('loads a valid 1.1.9 cache without a schema version', () async {
+    await cache.save(
+      signature: 'book-a',
+      textLength: 9,
+      pages: const [TextPage(start: 0, end: 4), TextPage(start: 4, end: 9)],
+    );
+    final file = directory.listSync().whereType<File>().single;
+    final record = jsonDecode(await file.readAsString()) as Map<String, dynamic>
+      ..remove('schemaVersion');
+    await file.writeAsString(jsonEncode(record));
+
+    final restored = await cache.load(signature: 'book-a', textLength: 9);
+
+    expect(restored, isNotNull);
+    expect(restored!.map((page) => page.start), [0, 4]);
+  });
+
   test('rejects malformed page display starts', () async {
     await cache.save(
       signature: 'book-a',
