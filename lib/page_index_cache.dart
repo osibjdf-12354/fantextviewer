@@ -90,7 +90,7 @@ class PageIndexCache {
   }
 
   Future<File> _file(String signature) async {
-    final directory = this.directory ?? await getApplicationSupportDirectory();
+    final directory = this.directory ?? await getTemporaryDirectory();
     return File(
       '${directory.path}${Platform.pathSeparator}'
       'page_index_${_stableHash(signature)}.json',

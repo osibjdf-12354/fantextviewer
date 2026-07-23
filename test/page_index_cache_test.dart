@@ -2,11 +2,14 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geulbom/page_index_cache.dart';
 import 'package:geulbom/text_paginator.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late Directory directory;
   late PageIndexCache cache;
 
@@ -228,4 +231,30 @@ void main() {
     expect(directory.listSync().whereType<File>(), hasLength(8));
     expect(await cache.load(signature: 'book-8', textLength: 9), isNotNull);
   });
+
+  test(
+    'default cache records are written under the temporary directory',
+    () async {
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      final methods = <String>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            methods.add(call.method);
+            return directory.path;
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+
+      await PageIndexCache().save(
+        signature: 'temporary-book',
+        textLength: 9,
+        pages: const [TextPage(start: 0, end: 9)],
+      );
+
+      expect(methods, ['getTemporaryDirectory']);
+      expect(directory.listSync().whereType<File>(), hasLength(1));
+    },
+  );
 }

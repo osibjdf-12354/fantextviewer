@@ -154,6 +154,7 @@ Future<DecodedText> loadTextFile(
   TextEncoding? forced,
   int maxFileBytes = maxSupportedTextFileBytes,
   int maxWholeFileBytes = maxWholeFileDecodeBytes,
+  bool? isAndroid,
 }) async {
   final rootToken = ServicesBinding.rootIsolateToken;
   return Isolate.run(
@@ -163,6 +164,7 @@ Future<DecodedText> loadTextFile(
       rootToken,
       maxFileBytes,
       maxWholeFileBytes,
+      isAndroid ?? Platform.isAndroid,
     ),
     debugName: 'load text file',
   );
@@ -174,6 +176,7 @@ Future<DecodedText> _loadTextFileInBackground(
   RootIsolateToken? rootToken,
   int maxFileBytes,
   int maxWholeFileBytes,
+  bool isAndroid,
 ) async {
   if (rootToken != null) {
     BackgroundIsolateBinaryMessenger.ensureInitialized(rootToken);
@@ -197,15 +200,6 @@ Future<DecodedText> _loadTextFileInBackground(
   }
   final bomEncoding = _bomEncoding(prefix);
   final encoding = forced ?? bomEncoding;
-  if (encoding == TextEncoding.cp949 &&
-      !Platform.isAndroid &&
-      size > maxWholeFileBytes) {
-    throw TextFileTooLargeException(
-      actualBytes: size,
-      maximumBytes: maxWholeFileBytes,
-      encoding: encoding,
-    );
-  }
   if (encoding == TextEncoding.utf16le || encoding == TextEncoding.utf16be) {
     final value = await _decodeUtf16File(
       file,
@@ -231,7 +225,14 @@ Future<DecodedText> _loadTextFileInBackground(
       if (encoding == TextEncoding.utf8) rethrow;
     }
   }
-  if (Platform.isAndroid) {
+  if (size > maxWholeFileBytes) {
+    throw TextFileTooLargeException(
+      actualBytes: size,
+      maximumBytes: maxWholeFileBytes,
+      encoding: encoding ?? TextEncoding.cp949,
+    );
+  }
+  if (isAndroid) {
     final value = await _textFileChannel.invokeMethod<String>('decode', {
       'path': path,
       'encoding': 'MS949',
@@ -241,13 +242,6 @@ Future<DecodedText> _loadTextFileInBackground(
       _normalizeLineEndings(value),
       TextEncoding.cp949,
       fingerprint: fingerprint,
-    );
-  }
-  if (size > maxWholeFileBytes) {
-    throw TextFileTooLargeException(
-      actualBytes: size,
-      maximumBytes: maxWholeFileBytes,
-      encoding: encoding ?? TextEncoding.cp949,
     );
   }
   final bytes = await file.readAsBytes();

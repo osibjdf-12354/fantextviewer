@@ -9,6 +9,7 @@ import 'file_browser.dart';
 import 'font_library.dart';
 import 'models.dart';
 import 'reader_screen.dart';
+import 'recovery_file_exporter.dart';
 import 'strings.dart';
 import 'text_file_importer.dart';
 
@@ -93,6 +94,23 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppStrings.stateImportFailed(error))),
+      );
+    }
+  }
+
+  Future<void> _exportRecovery() async {
+    final recovery = widget.store.recoveryFile;
+    if (recovery == null) return;
+    try {
+      final exported = await RecoveryFileExporter().export(recovery);
+      if (!mounted || !exported) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(AppStrings.stateExportSucceeded)),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppStrings.stateExportFailed(error))),
       );
     }
   }
@@ -191,7 +209,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           body: Column(
             children: [
-              if (widget.store.lastLoadError != null)
+              if (recoveryFile != null)
                 MaterialBanner(
                   content: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -209,6 +227,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   leading: const Icon(Icons.restore_page_outlined),
                   actions: [
+                    TextButton(
+                      onPressed: _exportRecovery,
+                      child: const Text(AppStrings.exportRecoveryFile),
+                    ),
                     TextButton(
                       onPressed: _importState,
                       child: const Text(AppStrings.importStateFile),

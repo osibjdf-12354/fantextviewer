@@ -102,6 +102,32 @@ void main() {
     );
   });
 
+  test('Android CP949 decoding obeys the whole-file byte cap', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'geulbom_android_cp949_limit',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}${Platform.pathSeparator}legacy.txt');
+    await file.writeAsBytes(List<int>.filled(9, 0x61));
+
+    await expectLater(
+      loadTextFile(
+        file.path,
+        forced: TextEncoding.cp949,
+        maxFileBytes: 20,
+        maxWholeFileBytes: 8,
+        isAndroid: true,
+      ),
+      throwsA(
+        isA<TextFileTooLargeException>().having(
+          (error) => error.maximumBytes,
+          'maximumBytes',
+          8,
+        ),
+      ),
+    );
+  });
+
   test('UTF-16 file decoding streams beyond the whole-file byte cap', () async {
     final directory = await Directory.systemTemp.createTemp(
       'geulbom_utf16_stream',

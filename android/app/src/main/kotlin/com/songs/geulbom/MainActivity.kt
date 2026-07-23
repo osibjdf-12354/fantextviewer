@@ -17,6 +17,7 @@ class MainActivity : FlutterActivity() {
     private val fileExecutor = Executors.newSingleThreadExecutor()
     private val importer = TextFileImporter(MAX_IMPORTED_TEXT_BYTES)
     private var pendingImportResult: MethodChannel.Result? = null
+    private var pendingExport: PendingExport? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -27,6 +28,19 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "decode" -> decodeTextFile(call.arguments as? Map<*, *>, result)
                 "importTextFile" -> openTextDocument(result)
+                "exportRecoveryFile" -> {
+                    val path = call.argument<String>("path")
+                    val suggestedName = call.argument<String>("suggestedName")
+                    if (path == null || suggestedName == null) {
+                        result.error(
+                            "invalid_argument",
+                            "path and suggestedName are required",
+                            null,
+                        )
+                    } else {
+                        createRecoveryDocument(path, suggestedName, result)
+                    }
+                }
                 "promoteLegacyImport" -> {
                     val path = call.argument<String>("path")
                     if (path == null) {
@@ -52,19 +66,29 @@ class MainActivity : FlutterActivity() {
         }
         fileExecutor.execute {
             try {
+                val file = File(path)
+                if (file.length() > MAX_CP949_DECODE_BYTES) {
+                    throw TextFileTooLargeException(MAX_CP949_DECODE_BYTES)
+                }
                 val text =
-                    File(path).bufferedReader(Charset.forName(encoding)).use { it.readText() }
+                    file.bufferedReader(Charset.forName(encoding)).use { it.readText() }
                 runOnUiThread { result.success(text) }
             } catch (error: Throwable) {
                 runOnUiThread {
-                    result.error("decode_failed", error.message, error.toString())
+                    val code =
+                        if (error is TextFileTooLargeException) {
+                            "file_too_large"
+                        } else {
+                            "decode_failed"
+                        }
+                    result.error(code, error.message, error.toString())
                 }
             }
         }
     }
 
     private fun openTextDocument(result: MethodChannel.Result) {
-        if (pendingImportResult != null) {
+        if (documentActionActive()) {
             result.error("picker_active", "A text file picker is already open", null)
             return
         }
@@ -83,6 +107,53 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private fun createRecoveryDocument(
+        path: String,
+        suggestedName: String,
+        result: MethodChannel.Result,
+    ) {
+        if (documentActionActive()) {
+            result.error("picker_active", "A document picker is already open", null)
+            return
+        }
+        val source =
+            try {
+                File(path).canonicalFile
+            } catch (error: Throwable) {
+                result.error("invalid_path", error.message, error.toString())
+                return
+            }
+        val filesRoot = filesDir.canonicalFile
+        val insideFiles =
+            source.path == filesRoot.path ||
+                source.path.startsWith(filesRoot.path + File.separator)
+        if (!insideFiles || !source.isFile) {
+            result.error(
+                "invalid_path",
+                "Recovery files must be inside the application files directory",
+                null,
+            )
+            return
+        }
+        pendingExport = PendingExport(result, source)
+        val intent =
+            Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "application/json"
+                putExtra(Intent.EXTRA_TITLE, suggestedName)
+                addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+        try {
+            startActivityForResult(intent, EXPORT_RECOVERY_REQUEST_CODE)
+        } catch (error: Throwable) {
+            pendingExport = null
+            result.error("picker_failed", error.message, error.toString())
+        }
+    }
+
+    private fun documentActionActive(): Boolean =
+        pendingImportResult != null || pendingExport != null
+
     @Deprecated("Deprecated by Android; retained for FlutterActivity compatibility")
     override fun onActivityResult(
         requestCode: Int,
@@ -90,6 +161,17 @@ class MainActivity : FlutterActivity() {
         data: Intent?,
     ) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == EXPORT_RECOVERY_REQUEST_CODE) {
+            val pending = pendingExport ?: return
+            pendingExport = null
+            val uri = data?.data
+            if (resultCode != Activity.RESULT_OK || uri == null) {
+                pending.result.success(false)
+                return
+            }
+            exportRecoveryFile(pending, uri)
+            return
+        }
         if (requestCode != IMPORT_TEXT_REQUEST_CODE) return
         val result = pendingImportResult ?: return
         pendingImportResult = null
@@ -99,6 +181,34 @@ class MainActivity : FlutterActivity() {
             return
         }
         importUri(uri, result)
+    }
+
+    private fun exportRecoveryFile(
+        pending: PendingExport,
+        uri: Uri,
+    ) {
+        fileExecutor.execute {
+            try {
+                val output =
+                    contentResolver.openOutputStream(uri, "w")
+                        ?: error("The selected destination could not be opened")
+                pending.source.inputStream().buffered().use { input ->
+                    output.buffered().use { destination ->
+                        input.copyTo(destination)
+                        destination.flush()
+                    }
+                }
+                runOnUiThread { pending.result.success(true) }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    pending.result.error(
+                        "export_failed",
+                        error.message,
+                        error.toString(),
+                    )
+                }
+            }
+        }
     }
 
     private fun importUri(
@@ -228,6 +338,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         pendingImportResult = null
+        pendingExport = null
         fileExecutor.shutdown()
         super.onDestroy()
     }
@@ -237,9 +348,16 @@ class MainActivity : FlutterActivity() {
         val size: Long?,
     )
 
+    private data class PendingExport(
+        val result: MethodChannel.Result,
+        val source: File,
+    )
+
     companion object {
         private const val IMPORT_TEXT_REQUEST_CODE = 7314
+        private const val EXPORT_RECOVERY_REQUEST_CODE = 7315
         private const val IMPORTED_TEXT_DIRECTORY = "imported_texts"
         private const val MAX_IMPORTED_TEXT_BYTES = 64L * 1024L * 1024L
+        private const val MAX_CP949_DECODE_BYTES = 32L * 1024L * 1024L
     }
 }

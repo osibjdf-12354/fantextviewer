@@ -4,6 +4,8 @@ abstract final class AppStrings {
   static const stateRecoveryBody =
       '손상된 저장 상태를 초기화했습니다. 보존된 백업을 수정한 뒤 다시 가져올 수 있습니다.';
   static const importStateFile = '상태 파일 가져오기';
+  static const exportRecoveryFile = '복구 파일 내보내기';
+  static const stateExportSucceeded = '복구 파일을 내보냈습니다.';
   static const stateImportSucceeded = '저장 상태를 복구했습니다.';
   static const appName = '글봄';
 
@@ -122,6 +124,7 @@ abstract final class AppStrings {
 
   static String folderReadFailed(Object error) => '폴더를 읽지 못했습니다.\n$error';
   static String stateImportFailed(Object error) => '저장 상태를 가져오지 못했습니다.\n$error';
+  static String stateExportFailed(Object error) => '복구 파일을 내보내지 못했습니다.\n$error';
   static String folderOpenFailed(Object error) => '폴더를 열지 못했습니다.\n$error';
   static String unsupportedSchema(Object version) =>
       '지원하지 않는 저장 데이터 버전: $version';

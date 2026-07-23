@@ -1,0 +1,40 @@
+import 'dart:io';
+
+import 'package:file_selector/file_selector.dart';
+import 'package:flutter/services.dart';
+
+const _textFileChannel = MethodChannel('com.songs.geulbom/text-file');
+const _suggestedRecoveryName = 'fantextviewer-state-recovery.json';
+
+class RecoveryFileExporter {
+  RecoveryFileExporter({
+    MethodChannel channel = _textFileChannel,
+    bool? isAndroid,
+  }) : _channel = channel,
+       _isAndroid = isAndroid ?? Platform.isAndroid;
+
+  final MethodChannel _channel;
+  final bool _isAndroid;
+
+  Future<bool> export(File source) async {
+    if (_isAndroid) {
+      return await _channel.invokeMethod<bool>('exportRecoveryFile', {
+            'path': source.path,
+            'suggestedName': _suggestedRecoveryName,
+          }) ??
+          false;
+    }
+    const jsonFiles = XTypeGroup(
+      label: 'JSON',
+      extensions: ['json'],
+      mimeTypes: ['application/json'],
+    );
+    final location = await getSaveLocation(
+      acceptedTypeGroups: const [jsonFiles],
+      suggestedName: _suggestedRecoveryName,
+    );
+    if (location == null) return false;
+    await source.copy(location.path);
+    return true;
+  }
+}
