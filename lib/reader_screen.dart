@@ -296,6 +296,24 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     );
   }
 
+  bool get _hasIndexedCurrentPage {
+    final pages = _pages;
+    return _pageWindow == null &&
+        pages != null &&
+        pages.isNotEmpty &&
+        (_paginationComplete || _offset < pages.last.end);
+  }
+
+  String get _pageIndicatorLabel {
+    if (!_hasIndexedCurrentPage ||
+        (_settings.showTotalPages && !_paginationComplete)) {
+      return '계산 중';
+    }
+    return _settings.showTotalPages
+        ? '$_currentPageNumber/${_completePages!.length}'
+        : '$_currentPageNumber';
+  }
+
   TextStyle get _textStyle => TextStyle(
     color: Color(_settings.foreground.value),
     fontFamily: fontFamilyFor(_settings.fontFileName),
@@ -385,11 +403,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                     math.max(1, constraints.maxHeight - _pageIndicatorInset),
                   );
                   _pageSize = pageSize;
-                  if (_isPaged ||
-                      widget.text.length <= _eagerScrollPaginationLimit ||
-                      _paginationKey != null) {
-                    _ensurePages(pageSize);
-                  }
+                  _ensurePages(pageSize);
                   return _activeMode == ReadingMode.scroll
                       ? _buildScrollReader()
                       : _buildPageReader();
@@ -609,9 +623,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: Text(
-            _settings.showTotalPages
-                ? '$_currentPageNumber/$_displayTotalPages'
-                : '$_currentPageNumber',
+            _pageIndicatorLabel,
             key: const Key('page-indicator'),
             style: TextStyle(color: Color(_settings.foreground.value)),
           ),

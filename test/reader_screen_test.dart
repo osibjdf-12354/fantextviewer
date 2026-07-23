@@ -194,7 +194,7 @@ void main() {
     expect(calls, 2);
   });
 
-  testWidgets('large scroll mode paginates only on demand and after resize', (
+  testWidgets('large scroll mode shares pagination and recalculates after resize', (
     tester,
   ) async {
     var paginationCalls = 0;
@@ -229,22 +229,118 @@ void main() {
     );
     await tester.pump();
 
-    expect(paginationCalls, 0);
-
-    await tester.tap(find.byIcon(Icons.menu));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('위치 이동'));
-    await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '1');
-    await tester.tap(find.text('이동'));
-    await tester.pumpAndSettle();
-
     expect(paginationCalls, 1);
 
     await tester.binding.setSurfaceSize(const Size(700, 400));
     await tester.pumpAndSettle();
 
     expect(paginationCalls, 2);
+  });
+
+  testWidgets('scroll and auto modes share exact page numbers', (tester) async {
+    final line = '${List.filled(80, 'a').join()}\n';
+    final text = List.filled(4000, line).join();
+    final chunks = splitText(text, maxChars: 700);
+    final targetOffset = chunks[200].start;
+    final pages = [
+      for (var start = 0; start < text.length; start += 100)
+        TextPage(start: start, end: math.min(start + 100, text.length)),
+    ];
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(autoPageIntervalSeconds: 60))
+      ..updateProgress(
+        '/book.txt',
+        offset: targetOffset,
+        documentLength: text.length,
+      );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                required paragraphIndent,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async {
+                onBatch?.call(pages);
+                return pages;
+              },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final pageLabel = '${pageForOffset(pages, targetOffset) + 1}';
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
+      pageLabel,
+    );
+
+    await _enableAutoMode(tester);
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
+      pageLabel,
+    );
+    expect(store.document('/book.txt').offset, targetOffset);
+  });
+
+  testWidgets('unindexed scroll position hides the estimated page number', (
+    tester,
+  ) async {
+    final line = '${List.filled(80, 'a').join()}\n';
+    final text = List.filled(4000, line).join();
+    final targetOffset = splitText(text, maxChars: 700)[200].start;
+    final pagination = Completer<List<TextPage>>();
+    addTearDown(() {
+      if (!pagination.isCompleted) pagination.complete(const []);
+    });
+    final store = _MemoryStore()
+      ..updateProgress(
+        '/book.txt',
+        offset: targetOffset,
+        documentLength: text.length,
+      );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                required paragraphIndent,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) => pagination.future,
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
+      '계산 중',
+    );
   });
 
   testWidgets('계산 중에도 페이지 번호로 즉시 이동한다', (tester) async {
