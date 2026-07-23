@@ -12,10 +12,10 @@ $keystorePath = Join-Path $androidRoot "app\geulbom-local.jks"
 $propertiesPath = Join-Path $androidRoot "key.properties"
 
 if (Test-Path -LiteralPath $keystorePath) {
-    throw "이미 로컬 키스토어가 있습니다: $keystorePath"
+    throw "A local keystore already exists: $keystorePath"
 }
 if (Test-Path -LiteralPath $propertiesPath) {
-    throw "이미 서명 설정이 있습니다: $propertiesPath"
+    throw "Signing properties already exist: $propertiesPath"
 }
 
 $keytoolCommand = Get-Command "keytool" -ErrorAction SilentlyContinue
@@ -27,7 +27,7 @@ if ($null -eq $keytoolPath -and -not [string]::IsNullOrWhiteSpace($env:JAVA_HOME
     }
 }
 if ($null -eq $keytoolPath) {
-    throw "keytool을 찾지 못했습니다. JDK를 설치하거나 JAVA_HOME을 설정하세요."
+    throw "keytool was not found. Install a JDK or set JAVA_HOME."
 }
 
 $passwordBytes = New-Object byte[] 24
@@ -53,7 +53,7 @@ try {
         -storepass:env GEULBOM_KEYSTORE_PASSWORD `
         -keypass:env GEULBOM_KEYSTORE_PASSWORD
     if ($LASTEXITCODE -ne 0) {
-        throw "keytool이 종료 코드 $LASTEXITCODE 로 실패했습니다."
+        throw "keytool failed with exit code $LASTEXITCODE."
     }
 
     $properties = @(
@@ -76,7 +76,7 @@ try {
     Remove-Item Env:GEULBOM_KEYSTORE_PASSWORD -ErrorAction SilentlyContinue
 }
 
-Write-Host "로컬 릴리스 키와 서명 설정을 만들었습니다."
-Write-Host "키스토어: $keystorePath"
-Write-Host "설정: $propertiesPath"
-Write-Host "두 파일은 .gitignore에 포함되며 삭제하면 같은 앱의 업데이트 서명을 유지할 수 없습니다."
+Write-Host "Created the local release key and signing properties."
+Write-Host "Keystore: $keystorePath"
+Write-Host "Properties: $propertiesPath"
+Write-Host "Both files are ignored by Git. Deleting them breaks update signing continuity."
