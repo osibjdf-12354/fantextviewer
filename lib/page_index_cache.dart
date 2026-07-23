@@ -21,16 +21,23 @@ class PageIndexCache {
       if (record is! Map<String, dynamic> ||
           record['signature'] != signature ||
           record['textLength'] != textLength ||
-          record['starts'] is! List) {
+          record['starts'] is! List ||
+          record['displayStarts'] is! List) {
         return null;
       }
       final starts = _validatedStarts(record['starts'], textLength);
       if (starts == null) return null;
+      final displayStarts = _validatedDisplayStarts(
+        record['displayStarts'],
+        starts,
+      );
+      if (displayStarts == null) return null;
       return [
         for (var index = 0; index < starts.length; index++)
           TextPage(
             start: starts[index],
             end: index + 1 < starts.length ? starts[index + 1] : textLength,
+            displayStart: displayStarts[index],
           ),
       ];
     } catch (_) {
@@ -53,6 +60,7 @@ class PageIndexCache {
           'signature': signature,
           'textLength': textLength,
           'starts': pages.map((page) => page.start).toList(),
+          'displayStarts': pages.map((page) => page.displayStart).toList(),
         }),
         flush: true,
       );
@@ -113,6 +121,22 @@ List<int>? _validatedStarts(Object? value, int textLength) {
     starts.add(start);
   }
   return starts;
+}
+
+List<int>? _validatedDisplayStarts(Object? value, List<int> starts) {
+  if (value is! List || value.length != starts.length) return null;
+  final result = <int>[];
+  for (var index = 0; index < starts.length; index++) {
+    final displayStart = value[index];
+    final minimum = index == 0 ? starts[index] : starts[index - 1];
+    if (displayStart is! int ||
+        displayStart < minimum ||
+        displayStart > starts[index]) {
+      return null;
+    }
+    result.add(displayStart);
+  }
+  return result;
 }
 
 String _stableHash(String value) {

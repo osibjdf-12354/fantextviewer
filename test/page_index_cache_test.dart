@@ -35,6 +35,19 @@ void main() {
     expect(restored.map((page) => page.end), [3, 9]);
   });
 
+  test('round-trips page display starts', () async {
+    const pages = [
+      TextPage(start: 0, end: 4),
+      TextPage(start: 4, end: 9, displayStart: 2),
+    ];
+
+    await cache.save(signature: 'book-a', textLength: 9, pages: pages);
+    final restored = await cache.load(signature: 'book-a', textLength: 9);
+
+    expect(restored, isNotNull);
+    expect(restored!.map((page) => page.displayStart), [0, 2]);
+  });
+
   test('rejects a record whose stored signature is stale', () async {
     await cache.save(
       signature: 'book-a',
@@ -89,6 +102,37 @@ void main() {
     await file.writeAsString('{broken');
 
     expect(await cache.load(signature: 'book-a', textLength: 9), isNull);
+  });
+
+  test('rejects malformed page display starts', () async {
+    await cache.save(
+      signature: 'book-a',
+      textLength: 9,
+      pages: const [
+        TextPage(start: 0, end: 3),
+        TextPage(start: 3, end: 6, displayStart: 1),
+        TextPage(start: 6, end: 9, displayStart: 4),
+      ],
+    );
+    final file = directory.listSync().whereType<File>().single;
+    final record =
+        jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+
+    for (final displayStarts in <Object?>[
+      null,
+      <int>[],
+      [0, 1],
+      [0, 4, 4],
+      [0, 1, 2],
+    ]) {
+      record['displayStarts'] = displayStarts;
+      await file.writeAsString(jsonEncode(record));
+      expect(
+        await cache.load(signature: 'book-a', textLength: 9),
+        isNull,
+        reason: 'accepted display starts $displayStarts',
+      );
+    }
   });
 
   test('retains at most eight records and keeps the latest save', () async {
