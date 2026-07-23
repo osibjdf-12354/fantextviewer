@@ -18,7 +18,7 @@ cleanup() {
 trap cleanup EXIT
 
 cd "$root"
-flutter pub get
+flutter build apk --debug
 
 (
   cd android
