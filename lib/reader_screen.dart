@@ -42,7 +42,6 @@ typedef ReaderWindowPaginator =
     });
 
 const _eagerScrollPaginationLimit = 256 * 1024;
-const _pageIndicatorInset = 40.0;
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
@@ -387,29 +386,34 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           _resumeAuto();
         }
       },
-      body: SafeArea(
-        top: false,
-        child: widget.text.isEmpty
-            ? Center(
-                child: Text('빈 파일입니다.', style: TextStyle(color: foreground)),
-              )
-            : LayoutBuilder(
-                builder: (context, constraints) {
-                  final pageSize = Size(
-                    math.max(
-                      1,
-                      constraints.maxWidth - _settings.horizontalPadding * 2,
-                    ),
-                    math.max(1, constraints.maxHeight - _pageIndicatorInset),
-                  );
-                  _pageSize = pageSize;
-                  _ensurePages(pageSize);
-                  return _activeMode == ReadingMode.scroll
-                      ? _buildScrollReader()
-                      : _buildPageReader();
-                },
-              ),
-      ),
+      body: widget.text.isEmpty
+          ? Center(
+              child: Text('빈 파일입니다.', style: TextStyle(color: foreground)),
+            )
+          : Column(
+              children: [
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final pageSize = Size(
+                        math.max(
+                          1,
+                          constraints.maxWidth -
+                              _settings.horizontalPadding * 2,
+                        ),
+                        math.max(1, constraints.maxHeight),
+                      );
+                      _pageSize = pageSize;
+                      _ensurePages(pageSize);
+                      return _activeMode == ReadingMode.scroll
+                          ? _buildScrollReader()
+                          : _buildPageReader();
+                    },
+                  ),
+                ),
+                _buildSystemPageIndicator(context),
+              ],
+            ),
     );
   }
 
@@ -484,55 +488,50 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   }
 
   Widget _buildScrollReader() {
-    return Stack(
-      children: [
-        Listener(
-          onPointerSignal: (event) {
-            if (event is PointerScrollEvent) _invalidateQueuedNavigation();
-          },
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              if (notification is ScrollUpdateNotification ||
-                  (notification is ScrollStartNotification &&
-                      notification.dragDetails != null) ||
-                  (notification is UserScrollNotification &&
-                      notification.direction != ScrollDirection.idle)) {
-                _invalidateQueuedNavigation();
-              }
-              return false;
-            },
-            child: ScrollablePositionedList.builder(
-              itemCount: _chunks.length,
-              itemScrollController: _itemScrollController,
-              itemPositionsListener: _itemPositionsListener,
-              initialScrollIndex: _chunkForOffset(_offset),
-              initialAlignment: widget.store
-                  .document(widget.path)
-                  .scrollAlignment
-                  .clamp(0, 1),
-              padding: EdgeInsets.fromLTRB(
-                _settings.horizontalPadding,
-                16,
-                _settings.horizontalPadding,
-                56,
-              ),
-              itemBuilder: (context, index) {
-                final chunk = _chunks[index];
-                return SelectableText(
-                  formatParagraphIndentation(
-                    widget.text,
-                    start: chunk.start,
-                    end: chunk.end,
-                    paragraphIndent: _settings.paragraphIndent,
-                  ).text,
-                  style: _textStyle,
-                );
-              },
-            ),
+    return Listener(
+      onPointerSignal: (event) {
+        if (event is PointerScrollEvent) _invalidateQueuedNavigation();
+      },
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (notification) {
+          if (notification is ScrollUpdateNotification ||
+              (notification is ScrollStartNotification &&
+                  notification.dragDetails != null) ||
+              (notification is UserScrollNotification &&
+                  notification.direction != ScrollDirection.idle)) {
+            _invalidateQueuedNavigation();
+          }
+          return false;
+        },
+        child: ScrollablePositionedList.builder(
+          itemCount: _chunks.length,
+          itemScrollController: _itemScrollController,
+          itemPositionsListener: _itemPositionsListener,
+          initialScrollIndex: _chunkForOffset(_offset),
+          initialAlignment: widget.store
+              .document(widget.path)
+              .scrollAlignment
+              .clamp(0, 1),
+          padding: EdgeInsets.fromLTRB(
+            _settings.horizontalPadding,
+            16,
+            _settings.horizontalPadding,
+            0,
           ),
+          itemBuilder: (context, index) {
+            final chunk = _chunks[index];
+            return SelectableText(
+              formatParagraphIndentation(
+                widget.text,
+                start: chunk.start,
+                end: chunk.end,
+                paragraphIndent: _settings.paragraphIndent,
+              ).text,
+              style: _textStyle,
+            );
+          },
         ),
-        _buildPageIndicator(),
-      ],
+      ),
     );
   }
 
@@ -555,78 +554,85 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       );
     }
     final safeIndex = pageIndex.clamp(0, pages.length - 1).toInt();
-    return Stack(
-      children: [
-        PageTurnView(
-          key: _pageTurnKey,
-          index: safeIndex,
-          itemCount: pages.length,
-          direction: _activePageTurnDirection,
-          tapOnly: _activeMode == ReadingMode.tap,
-          onInteractionStart: _pauseAuto,
-          onInteractionEnd: _resumeAuto,
-          onPageChanged: (index) {
-            final activePages = _pageWindow?.pages ?? _pages;
-            if (!identical(activePages, pages)) return;
-            _registerManualNavigation();
-            final nextOffset = pages[index].start;
-            setState(() {
-              _pageIndex = index;
-              _displayPageNumber = window == null
-                  ? index + 1
-                  : window.firstPage + index;
-              _pendingPageOffset = null;
-              _pendingScrollOffset = null;
-              _setOffset(nextOffset);
-            });
-            _restartAutoTimer();
-          },
-          itemBuilder: (context, index) {
-            final page = pages[index];
-            return Padding(
-              key: Key('page-content-$index'),
-              padding: EdgeInsets.fromLTRB(
-                _settings.horizontalPadding,
-                0,
-                _settings.horizontalPadding,
-                _pageIndicatorInset,
-              ),
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: SelectableText(
-                  formatParagraphIndentation(
-                    widget.text,
-                    start: page.displayStart,
-                    end: page.end,
-                    paragraphIndent: _settings.paragraphIndent,
-                  ).text,
-                  style: _textStyle,
-                ),
-              ),
-            );
-          },
+    return PageTurnView(
+      key: _pageTurnKey,
+      index: safeIndex,
+      itemCount: pages.length,
+      direction: _activePageTurnDirection,
+      tapOnly: _activeMode == ReadingMode.tap,
+      onInteractionStart: _pauseAuto,
+      onInteractionEnd: _resumeAuto,
+      onPageChanged: (index) {
+        final activePages = _pageWindow?.pages ?? _pages;
+        if (!identical(activePages, pages)) return;
+        _registerManualNavigation();
+        final nextOffset = pages[index].start;
+        setState(() {
+          _pageIndex = index;
+          _displayPageNumber = window == null
+              ? index + 1
+              : window.firstPage + index;
+          _pendingPageOffset = null;
+          _pendingScrollOffset = null;
+          _setOffset(nextOffset);
+        });
+        _restartAutoTimer();
+      },
+      itemBuilder: (context, index) {
+        final page = pages[index];
+        return Padding(
+          key: Key('page-content-$index'),
+          padding: EdgeInsets.fromLTRB(
+            _settings.horizontalPadding,
+            0,
+            _settings.horizontalPadding,
+            0,
+          ),
+          child: Align(
+            alignment: Alignment.topLeft,
+            child: SelectableText(
+              formatParagraphIndentation(
+                widget.text,
+                start: page.displayStart,
+                end: page.end,
+                paragraphIndent: _settings.paragraphIndent,
+              ).text,
+              style: _textStyle,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSystemPageIndicator(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(
+        minHeight: MediaQuery.viewPaddingOf(context).bottom,
+      ),
+      child: Align(
+        alignment: Alignment.bottomRight,
+        heightFactor: 1,
+        child: Padding(
+          padding: EdgeInsetsDirectional.only(end: _settings.horizontalPadding),
+          child: _buildPageIndicator(),
         ),
-        _buildPageIndicator(),
-      ],
+      ),
     );
   }
 
   Widget _buildPageIndicator() {
-    return Positioned(
-      right: 12,
-      bottom: 8,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Color(_settings.background.value).withValues(alpha: .85),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Text(
-            _pageIndicatorLabel,
-            key: const Key('page-indicator'),
-            style: TextStyle(color: Color(_settings.foreground.value)),
-          ),
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Color(_settings.background.value).withValues(alpha: .85),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Text(
+          _pageIndicatorLabel,
+          key: const Key('page-indicator'),
+          style: TextStyle(color: Color(_settings.foreground.value)),
         ),
       ),
     );

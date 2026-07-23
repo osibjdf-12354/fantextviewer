@@ -194,48 +194,49 @@ void main() {
     expect(calls, 2);
   });
 
-  testWidgets('large scroll mode shares pagination and recalculates after resize', (
-    tester,
-  ) async {
-    var paginationCalls = 0;
-    final text = List.filled(300 * 1024, 'a').join();
-    await tester.binding.setSurfaceSize(const Size(400, 700));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+  testWidgets(
+    'large scroll mode shares pagination and recalculates after resize',
+    (tester) async {
+      var paginationCalls = 0;
+      final text = List.filled(300 * 1024, 'a').join();
+      await tester.binding.setSurfaceSize(const Size(400, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: ReaderView(
-          path: '/book.txt',
-          title: 'book.txt',
-          text: text,
-          encoding: TextEncoding.utf8,
-          store: _MemoryStore(),
-          paginator:
-              ({
-                required text,
-                required size,
-                required style,
-                required paragraphIndent,
-                onProgress,
-                onBatch,
-                onLayout,
-                isCancelled,
-              }) async {
-                paginationCalls++;
-                return const [];
-              },
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderView(
+            path: '/book.txt',
+            title: 'book.txt',
+            text: text,
+            encoding: TextEncoding.utf8,
+            store: _MemoryStore(),
+            paginator:
+                ({
+                  required text,
+                  required size,
+                  required style,
+                  required paragraphIndent,
+                  onProgress,
+                  onBatch,
+                  onLayout,
+                  isCancelled,
+                }) async {
+                  paginationCalls++;
+                  return const [];
+                },
+          ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    expect(paginationCalls, 1);
+      expect(paginationCalls, 1);
 
-    await tester.binding.setSurfaceSize(const Size(700, 400));
-    await tester.pumpAndSettle();
+      await tester.binding.setSurfaceSize(const Size(700, 400));
+      await tester.pumpAndSettle();
 
-    expect(paginationCalls, 2);
-  });
+      expect(paginationCalls, 2);
+    },
+  );
 
   testWidgets('scroll and auto modes share exact page numbers', (tester) async {
     final line = '${List.filled(80, 'a').join()}\n';
@@ -464,9 +465,18 @@ void main() {
     expect(indicator.data, matches(RegExp(r'^\d+/\d+$')));
   });
 
-  testWidgets('page mode reserves the indicator area from pagination', (
+  testWidgets('page mode uses the full reader viewport for pagination', (
     tester,
   ) async {
+    final bottomSystemArea = FakeViewPadding(
+      bottom: 32 * tester.view.devicePixelRatio,
+    );
+    tester.view.padding = bottomSystemArea;
+    tester.view.viewPadding = bottomSystemArea;
+    addTearDown(() {
+      tester.view.resetPadding();
+      tester.view.resetViewPadding();
+    });
     Size? measuredSize;
     final store = _MemoryStore()
       ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
@@ -500,21 +510,39 @@ void main() {
     await tester.pumpAndSettle();
 
     final pagerHeight = tester.getSize(find.byType(PageTurnView)).height;
-    expect(measuredSize?.height, pagerHeight - 40);
+    expect(measuredSize?.height, pagerHeight);
     final padding = tester.widget<Padding>(
       find.byKey(const Key('page-content-0')),
     );
-    expect((padding.padding as EdgeInsets).bottom, 40);
+    expect((padding.padding as EdgeInsets).bottom, 0);
+    expect(
+      find.ancestor(
+        of: find.byType(PageTurnView),
+        matching: find.byType(SafeArea),
+      ),
+      findsNothing,
+    );
   });
 
-  testWidgets('reader content stays above the bottom system bar', (
+  testWidgets('page indicator occupies the bottom-right system gesture area', (
     tester,
   ) async {
-    tester.view.padding = const FakeViewPadding(bottom: 32);
-    addTearDown(tester.view.resetPadding);
-    final safeBottom =
-        (tester.view.physicalSize.height - tester.view.padding.bottom) /
+    final bottomSystemArea = FakeViewPadding(
+      bottom: 32 * tester.view.devicePixelRatio,
+    );
+    tester.view.padding = bottomSystemArea;
+    tester.view.viewPadding = bottomSystemArea;
+    addTearDown(() {
+      tester.view.resetPadding();
+      tester.view.resetViewPadding();
+    });
+    final screenHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    final gestureTop =
+        (tester.view.physicalSize.height - tester.view.viewPadding.bottom) /
         tester.view.devicePixelRatio;
+    final screenWidth =
+        tester.view.physicalSize.width / tester.view.devicePixelRatio;
 
     for (final mode in [ReadingMode.scroll, ReadingMode.page]) {
       final store = _MemoryStore()..updateSettings(ReaderSettings(mode: mode));
@@ -525,7 +553,22 @@ void main() {
       final reader = mode == ReadingMode.scroll
           ? find.byType(ScrollablePositionedList)
           : find.byType(PageTurnView);
-      expect(tester.getBottomRight(reader).dy, safeBottom, reason: mode.name);
+      final indicatorRect = tester.getRect(
+        find.byKey(const Key('page-indicator')),
+      );
+      final readerRect = tester.getRect(reader);
+      expect(
+        readerRect.bottom,
+        gestureTop,
+        reason: '${mode.name}: reader=$readerRect indicator=$indicatorRect',
+      );
+      expect(indicatorRect.top, greaterThanOrEqualTo(gestureTop));
+      expect(indicatorRect.bottom, lessThanOrEqualTo(screenHeight));
+      expect(indicatorRect.right, greaterThan(screenWidth / 2));
+      expect(
+        find.ancestor(of: reader, matching: find.byType(SafeArea)),
+        findsNothing,
+      );
     }
   });
 
@@ -1375,9 +1418,11 @@ void main() {
     expect(windowStarted, isTrue);
 
     await tester.tap(find.byIcon(Icons.menu));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     await tester.tap(find.text('위치 이동'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
     await tester.enterText(find.byType(TextField), '1');
     await tester.tap(find.text('이동'));
     await tester.pump();
@@ -1645,11 +1690,7 @@ void main() {
       final chunks = splitText(text, maxChars: 700);
       final distantOffset = chunks[chunks.length - 2].start;
       text = text.replaceRange(0, 8, 'BEGIN!!!');
-      text = text.replaceRange(
-        distantOffset,
-        distantOffset + 8,
-        'DISTANT!',
-      );
+      text = text.replaceRange(distantOffset, distantOffset + 8, 'DISTANT!');
       final pagination = Completer<List<TextPage>>();
       final nearbyWindow = Completer<List<TextPage>>();
       addTearDown(() {
@@ -1697,10 +1738,7 @@ void main() {
                   windowCalls++;
                   if (windowCalls > 1) return nearbyWindow.future;
                   return Future.value([
-                    TextPage(
-                      start: distantOffset - 100,
-                      end: distantOffset,
-                    ),
+                    TextPage(start: distantOffset - 100, end: distantOffset),
                     TextPage(
                       start: distantOffset,
                       end: math.min(distantOffset + 100, text.length),
@@ -2780,10 +2818,7 @@ Future<void> _pumpAutoReader(
   await tester.pumpAndSettle();
 }
 
-Future<void> _enableAutoMode(
-  WidgetTester tester, {
-  bool settle = true,
-}) async {
+Future<void> _enableAutoMode(WidgetTester tester, {bool settle = true}) async {
   await tester.tap(find.byIcon(Icons.menu));
   await tester.pumpAndSettle();
   await tester.tap(find.byKey(const Key('auto-mode-switch')));
