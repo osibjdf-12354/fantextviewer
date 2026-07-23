@@ -218,6 +218,41 @@ class ReaderSettings {
       ),
     );
   }
+
+  @override
+  bool operator ==(Object other) {
+    return other is ReaderSettings &&
+        mode == other.mode &&
+        background == other.background &&
+        foreground == other.foreground &&
+        fontFileName == other.fontFileName &&
+        fontSize == other.fontSize &&
+        lineHeight == other.lineHeight &&
+        horizontalPadding == other.horizontalPadding &&
+        paragraphIndent == other.paragraphIndent &&
+        keepAwake == other.keepAwake &&
+        showTotalPages == other.showTotalPages &&
+        pageTurnDirection == other.pageTurnDirection &&
+        pageTurnAnimationEnabled == other.pageTurnAnimationEnabled &&
+        autoPageIntervalSeconds == other.autoPageIntervalSeconds;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    mode,
+    background,
+    foreground,
+    fontFileName,
+    fontSize,
+    lineHeight,
+    horizontalPadding,
+    paragraphIndent,
+    keepAwake,
+    showTotalPages,
+    pageTurnDirection,
+    pageTurnAnimationEnabled,
+    autoPageIntervalSeconds,
+  );
 }
 
 class Bookmark {
