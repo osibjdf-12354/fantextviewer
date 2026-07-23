@@ -563,6 +563,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       itemCount: pages.length,
       direction: _activePageTurnDirection,
       tapOnly: _activeMode == ReadingMode.tap,
+      animationEnabled: _settings.pageTurnAnimationEnabled,
       onInteractionStart: _pauseAuto,
       onInteractionEnd: _resumeAuto,
       onPageChanged: (index) {
@@ -1320,6 +1321,15 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                       style: Theme.of(sheetContext).textTheme.bodySmall,
                     ),
                   ],
+                  SwitchListTile(
+                    key: const Key('page-turn-animation-switch'),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('페이지 넘김 애니메이션'),
+                    value: draft.pageTurnAnimationEnabled,
+                    onChanged: (value) => setSheetState(() {
+                      draft = draft.copyWith(pageTurnAnimationEnabled: value);
+                    }),
+                  ),
                   _SettingStepper(
                     settingKey: 'auto-page-interval',
                     label: '오토 페이지 간격 (초)',

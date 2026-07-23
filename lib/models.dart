@@ -70,6 +70,7 @@ class ReaderSettings {
     this.keepAwake = false,
     this.showTotalPages = false,
     this.pageTurnDirection = PageTurnDirection.horizontal,
+    this.pageTurnAnimationEnabled = true,
     this.autoPageIntervalSeconds = 5,
   }) : assert(paragraphIndent >= 0 && paragraphIndent <= 2),
        assert(autoPageIntervalSeconds >= 1 && autoPageIntervalSeconds <= 60);
@@ -85,6 +86,7 @@ class ReaderSettings {
   final bool keepAwake;
   final bool showTotalPages;
   final PageTurnDirection pageTurnDirection;
+  final bool pageTurnAnimationEnabled;
   final int autoPageIntervalSeconds;
 
   ReaderSettings copyWith({
@@ -99,6 +101,7 @@ class ReaderSettings {
     bool? keepAwake,
     bool? showTotalPages,
     PageTurnDirection? pageTurnDirection,
+    bool? pageTurnAnimationEnabled,
     int? autoPageIntervalSeconds,
   }) {
     return ReaderSettings(
@@ -115,6 +118,8 @@ class ReaderSettings {
       keepAwake: keepAwake ?? this.keepAwake,
       showTotalPages: showTotalPages ?? this.showTotalPages,
       pageTurnDirection: pageTurnDirection ?? this.pageTurnDirection,
+      pageTurnAnimationEnabled:
+          pageTurnAnimationEnabled ?? this.pageTurnAnimationEnabled,
       autoPageIntervalSeconds:
           autoPageIntervalSeconds ?? this.autoPageIntervalSeconds,
     );
@@ -132,6 +137,7 @@ class ReaderSettings {
     'keepAwake': keepAwake,
     'showTotalPages': showTotalPages,
     'pageTurnDirection': pageTurnDirection.name,
+    'pageTurnAnimationEnabled': pageTurnAnimationEnabled,
     'autoPageIntervalSeconds': autoPageIntervalSeconds,
   };
 
@@ -158,6 +164,8 @@ class ReaderSettings {
         (direction) => direction.name == json['pageTurnDirection'],
         orElse: () => PageTurnDirection.horizontal,
       ),
+      pageTurnAnimationEnabled:
+          json['pageTurnAnimationEnabled'] as bool? ?? true,
       autoPageIntervalSeconds: _autoPageIntervalFromJson(
         json['autoPageIntervalSeconds'],
       ),

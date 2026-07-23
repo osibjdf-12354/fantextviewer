@@ -142,6 +142,18 @@ void main() {
     );
   });
 
+  test('persists page turn animation and defaults to enabled', () {
+    const disabled = ReaderSettings(pageTurnAnimationEnabled: false);
+
+    expect(disabled.toJson()['pageTurnAnimationEnabled'], isFalse);
+    expect(
+      ReaderSettings.fromJson(disabled.toJson()).pageTurnAnimationEnabled,
+      isFalse,
+    );
+    expect(ReaderSettings.fromJson(const {}).pageTurnAnimationEnabled, isTrue);
+    expect(disabled.copyWith(fontSize: 24).pageTurnAnimationEnabled, isFalse);
+  });
+
   test('persists tap mode without changing saved page mode', () {
     const tap = ReaderSettings(mode: ReadingMode.tap);
 

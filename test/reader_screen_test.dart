@@ -2013,6 +2013,30 @@ void main() {
     expect(store.data.settings.pageTurnDirection, PageTurnDirection.both);
   });
 
+  testWidgets('display settings save page turn animation', (tester) async {
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
+    await _pumpReader(tester, store, _longText);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await tester.pumpAndSettle();
+
+    final toggle = find.byKey(const Key('page-turn-animation-switch'));
+    await tester.ensureVisible(toggle);
+    expect(tester.widget<SwitchListTile>(toggle).value, isTrue);
+    await tester.tap(toggle);
+    await _dismissSettings(tester);
+
+    expect(store.data.settings.pageTurnAnimationEnabled, isFalse);
+    expect(
+      tester.widget<PageTurnView>(find.byType(PageTurnView)).animationEnabled,
+      isFalse,
+    );
+  });
+
   test('같은 RGB 색의 명암비는 1이다', () {
     expect(
       contrastRatio(
