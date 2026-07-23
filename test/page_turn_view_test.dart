@@ -277,6 +277,63 @@ void main() {
     expect(page.value, 1);
   });
 
+  testWidgets('animation disabled keeps the page still and turns on release', (
+    tester,
+  ) async {
+    final page = ValueNotifier(1);
+    await _pumpPager(
+      tester,
+      page,
+      PageTurnDirection.horizontal,
+      animationEnabled: false,
+    );
+    final pager = find.byType(PageTurnView);
+    final current = find.widgetWithText(SelectableText, 'page 1');
+    final initialLeft = tester.getTopLeft(current).dx;
+
+    final gesture = await tester.startGesture(tester.getCenter(pager));
+    await gesture.moveBy(const Offset(-300, 0));
+    await tester.pump();
+
+    expect(tester.getTopLeft(current).dx, initialLeft);
+    expect(page.value, 1);
+
+    await gesture.up();
+    await tester.pump();
+
+    expect(page.value, 2);
+  });
+
+  testWidgets('animation disabled makes programmatic turns immediate', (
+    tester,
+  ) async {
+    final key = GlobalKey<PageTurnViewState>();
+    final page = ValueNotifier(0);
+    addTearDown(page.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<int>(
+          valueListenable: page,
+          builder: (context, index, _) => PageTurnView(
+            key: key,
+            index: index,
+            itemCount: 3,
+            direction: PageTurnDirection.vertical,
+            animationEnabled: false,
+            onPageChanged: (value) => page.value = value,
+            itemBuilder: (_, itemIndex) => Text('page $itemIndex'),
+          ),
+        ),
+      ),
+    );
+
+    final turn = key.currentState!.animateNext(Axis.vertical);
+    await tester.pump();
+
+    expect(await turn, isTrue);
+    expect(page.value, 1);
+  });
+
   testWidgets('reports pointer interaction boundaries once', (tester) async {
     var starts = 0;
     var ends = 0;
@@ -309,6 +366,7 @@ Future<void> _pumpPager(
   ValueNotifier<int> page,
   PageTurnDirection direction, {
   bool tapOnly = false,
+  bool animationEnabled = true,
   SelectionChangedCallback? onSelectionChanged,
 }) async {
   await tester.pumpWidget(
@@ -320,6 +378,7 @@ Future<void> _pumpPager(
           itemCount: 3,
           direction: direction,
           tapOnly: tapOnly,
+          animationEnabled: animationEnabled,
           onPageChanged: (value) => page.value = value,
           itemBuilder: (context, itemIndex) => SelectableText(
             'page $itemIndex',

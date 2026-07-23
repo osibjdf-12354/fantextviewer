@@ -12,6 +12,7 @@ class PageTurnView extends StatefulWidget {
     required this.itemCount,
     required this.direction,
     this.tapOnly = false,
+    this.animationEnabled = true,
     this.onInteractionStart,
     this.onInteractionEnd,
     required this.onPageChanged,
@@ -22,6 +23,7 @@ class PageTurnView extends StatefulWidget {
   final int itemCount;
   final PageTurnDirection direction;
   final bool tapOnly;
+  final bool animationEnabled;
   final VoidCallback? onInteractionStart;
   final VoidCallback? onInteractionEnd;
   final ValueChanged<int> onPageChanged;
@@ -56,7 +58,8 @@ class PageTurnViewState extends State<PageTurnView>
     if (oldWidget.index != widget.index ||
         oldWidget.itemCount != widget.itemCount ||
         oldWidget.direction != widget.direction ||
-        oldWidget.tapOnly != widget.tapOnly) {
+        oldWidget.tapOnly != widget.tapOnly ||
+        oldWidget.animationEnabled != widget.animationEnabled) {
       _resetInteraction();
     }
   }
@@ -135,6 +138,7 @@ class PageTurnViewState extends State<PageTurnView>
       _progress.value = 0;
       return;
     }
+    if (!widget.animationEnabled) return;
     _progress.value = _dragProgress.clamp(-1, 1).toDouble();
   }
 
@@ -151,6 +155,9 @@ class PageTurnViewState extends State<PageTurnView>
     final cancelled = _cancelled;
     final axis = _axis;
     final velocity = _velocityTracker?.getVelocity().pixelsPerSecond;
+    final progress = widget.animationEnabled
+        ? _progress.value
+        : _dragProgress.clamp(-1, 1).toDouble();
     _pointer = null;
     _dragProgress = 0;
     _velocityTracker = null;
@@ -174,16 +181,16 @@ class PageTurnViewState extends State<PageTurnView>
     }
 
     final axisVelocity = axis == Axis.horizontal ? velocity?.dx : velocity?.dy;
-    final moved = _progress.value.abs() >= .2;
+    final moved = progress.abs() >= .2;
     final flung =
         axisVelocity != null &&
         axisVelocity.abs() >= 600 &&
-        axisVelocity.sign == _progress.value.sign;
+        axisVelocity.sign == progress.sign;
     if (!moved && !flung) {
       unawaited(_animateBack());
       return;
     }
-    unawaited(_animateTurn(_progress.value < 0 ? 1 : -1, axis));
+    unawaited(_animateTurn(progress < 0 ? 1 : -1, axis));
   }
 
   void _handleCancel(PointerCancelEvent event) {
@@ -231,6 +238,10 @@ class PageTurnViewState extends State<PageTurnView>
     if (_progress.isAnimating) return;
     if (!_canTurn(pageDelta)) {
       await _animateBack();
+      return;
+    }
+    if (!widget.animationEnabled) {
+      widget.onPageChanged(widget.index + pageDelta);
       return;
     }
     setState(() => _axis = axis);
