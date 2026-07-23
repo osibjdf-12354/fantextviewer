@@ -63,13 +63,27 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final pageText = tester.widget<SelectableText>(
-      find.widgetWithText(SelectableText, text),
+    final pageContent = find.byKey(const Key('page-content-0'));
+    final pageText = tester.widget<Text>(
+      find.descendant(
+        of: pageContent,
+        matching: find.byWidgetPredicate(
+          (widget) => widget is Text && widget.data == text,
+        ),
+      ),
     );
     expect(measuredStyle?.fontSize, 30);
     expect(pageText.style, measuredStyle);
     expect(pageText.style?.inherit, isFalse);
     expect(pageText.textScaler, TextScaler.noScaling);
+    expect(
+      find.descendant(of: pageContent, matching: find.byType(SelectionArea)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: pageContent, matching: find.byType(Scrollable)),
+      findsNothing,
+    );
   });
 
   testWidgets('선택 글꼴을 본문에 적용하고 글꼴별 페이지 캐시를 사용한다', (tester) async {
@@ -188,7 +202,18 @@ void main() {
 
     expect(cache.loadSignatures.toSet(), hasLength(2));
     expect(
-      tester.widget<SelectableText>(find.byType(SelectableText)).data,
+      tester
+          .widget<Text>(
+            find.descendant(
+              of: find.byKey(const Key('page-content-0')),
+              matching: find.byWidgetPredicate(
+                (widget) =>
+                    widget is Text &&
+                    widget.data == '　　첫 문단\n　　둘째 문단',
+              ),
+            ),
+          )
+          .data,
       '　　첫 문단\n　　둘째 문단',
     );
   });

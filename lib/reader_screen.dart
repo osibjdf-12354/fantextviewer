@@ -593,15 +593,17 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           ),
           child: Align(
             alignment: Alignment.topLeft,
-            child: SelectableText(
-              formatParagraphIndentation(
-                widget.text,
-                start: page.displayStart,
-                end: page.end,
-                paragraphIndent: _settings.paragraphIndent,
-              ).text,
-              style: _textStyle,
-              textScaler: TextScaler.noScaling,
+            child: SelectionArea(
+              child: Text(
+                formatParagraphIndentation(
+                  widget.text,
+                  start: page.displayStart,
+                  end: page.end,
+                  paragraphIndent: _settings.paragraphIndent,
+                ).text,
+                style: _textStyle,
+                textScaler: TextScaler.noScaling,
+              ),
             ),
           ),
         );
