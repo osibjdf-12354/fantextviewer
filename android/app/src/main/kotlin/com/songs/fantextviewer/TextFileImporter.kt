@@ -21,7 +21,16 @@ class TextFileImporter(
         check(directory.mkdirs() || directory.isDirectory) {
             "Could not create the imported text directory"
         }
-        val target = File(directory, sanitizeDisplayName(displayName))
+        val existing =
+            directory
+                .listFiles()
+                .orEmpty()
+                .filter {
+                    it.isFile &&
+                        !it.name.endsWith(".tmp") &&
+                        !it.name.endsWith(".bak")
+                }.maxWithOrNull(compareBy<File>({ it.lastModified() }, { it.name }))
+        val target = existing ?: File(directory, sanitizeDisplayName(displayName))
         val temporary = File.createTempFile(".${target.name}.", ".tmp", directory)
         try {
             input.use { source ->

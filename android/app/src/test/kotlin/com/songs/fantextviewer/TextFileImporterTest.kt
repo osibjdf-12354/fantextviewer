@@ -49,7 +49,7 @@ class TextFileImporterTest {
                     ByteArrayInputStream("second".toByteArray()),
                     root,
                     "same-uri",
-                    "novel.txt",
+                    "renamed-by-provider.txt",
                 )
 
             assertEquals(first, second)
