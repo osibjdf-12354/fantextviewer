@@ -1411,6 +1411,114 @@ void main() {
     },
   );
 
+  testWidgets('auto mode toggle preserves a distant scroll position', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final line = '${List.filled(80, 'x').join()}\n';
+    final text = List.filled(4000, line).join();
+    final chunks = splitText(text, maxChars: 700);
+    final exactPages = [
+      for (var start = 0; start < text.length; start += 100)
+        TextPage(start: start, end: math.min(start + 100, text.length)),
+    ];
+    final pagination = Completer<List<TextPage>>();
+    addTearDown(() {
+      if (!pagination.isCompleted) pagination.complete(const []);
+    });
+    final store = _MemoryStore();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                required paragraphIndent,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) => pagination.future,
+          windowPaginator:
+              ({
+                required text,
+                required startOffset,
+                required size,
+                required style,
+                required paragraphIndent,
+                onLayout,
+                isCancelled,
+              }) async => [
+                for (
+                  var start = startOffset;
+                  start < math.min(startOffset + 2500, text.length);
+                  start += 100
+                )
+                  TextPage(
+                    start: start,
+                    end: math.min(start + 100, text.length),
+                  ),
+              ],
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    tester
+        .widget<ScrollablePositionedList>(find.byType(ScrollablePositionedList))
+        .itemScrollController!
+        .jumpTo(index: chunks.length - 2);
+    await tester.pumpAndSettle();
+    final offset = store.document('/book.txt').offset;
+    final page = int.parse(
+      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data!,
+    );
+    expect(page, greaterThan(100));
+
+    await _enableAutoMode(tester);
+
+    expect(
+      tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
+      '$page',
+    );
+    expect(store.document('/book.txt').offset, offset);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('auto-mode-switch')));
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ScrollablePositionedList), findsOneWidget);
+    expect(store.document('/book.txt').offset, offset);
+
+    pagination.complete(exactPages);
+    await tester.pumpAndSettle();
+    tester
+        .widget<ScrollablePositionedList>(find.byType(ScrollablePositionedList))
+        .itemScrollController!
+        .jumpTo(index: chunks.length ~/ 2);
+    await tester.pumpAndSettle();
+    final nextOffset = store.document('/book.txt').offset;
+    final nextPage = pageForOffset(exactPages, nextOffset);
+
+    await _enableAutoMode(tester);
+
+    expect(
+      tester.widget<PageTurnView>(find.byType(PageTurnView)).index,
+      nextPage,
+    );
+    expect(store.document('/book.txt').offset, nextOffset);
+  });
+
   testWidgets('manual page turn restarts the full auto interval', (
     tester,
   ) async {

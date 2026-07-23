@@ -375,13 +375,12 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
             )
           : LayoutBuilder(
               builder: (context, constraints) {
-                final pageBottomInset = _isPaged ? _pageIndicatorInset : 0.0;
                 final pageSize = Size(
                   math.max(
                     1,
                     constraints.maxWidth - _settings.horizontalPadding * 2,
                   ),
-                  math.max(1, constraints.maxHeight - pageBottomInset),
+                  math.max(1, constraints.maxHeight - _pageIndicatorInset),
                 );
                 _pageSize = pageSize;
                 if (_isPaged ||
@@ -988,6 +987,9 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       _pendingScrollOffset = _offset;
     }
     setState(() => _autoMode = enabled);
+    if (enabled && (_pageWindow != null || _pages != null)) {
+      _jumpToOffset(_offset);
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _restartAutoTimer();
     });
