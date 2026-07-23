@@ -369,30 +369,33 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           _resumeAuto();
         }
       },
-      body: widget.text.isEmpty
-          ? Center(
-              child: Text('빈 파일입니다.', style: TextStyle(color: foreground)),
-            )
-          : LayoutBuilder(
-              builder: (context, constraints) {
-                final pageSize = Size(
-                  math.max(
-                    1,
-                    constraints.maxWidth - _settings.horizontalPadding * 2,
-                  ),
-                  math.max(1, constraints.maxHeight - _pageIndicatorInset),
-                );
-                _pageSize = pageSize;
-                if (_isPaged ||
-                    widget.text.length <= _eagerScrollPaginationLimit ||
-                    _paginationKey != null) {
-                  _ensurePages(pageSize);
-                }
-                return _activeMode == ReadingMode.scroll
-                    ? _buildScrollReader()
-                    : _buildPageReader();
-              },
-            ),
+      body: SafeArea(
+        top: false,
+        child: widget.text.isEmpty
+            ? Center(
+                child: Text('빈 파일입니다.', style: TextStyle(color: foreground)),
+              )
+            : LayoutBuilder(
+                builder: (context, constraints) {
+                  final pageSize = Size(
+                    math.max(
+                      1,
+                      constraints.maxWidth - _settings.horizontalPadding * 2,
+                    ),
+                    math.max(1, constraints.maxHeight - _pageIndicatorInset),
+                  );
+                  _pageSize = pageSize;
+                  if (_isPaged ||
+                      widget.text.length <= _eagerScrollPaginationLimit ||
+                      _paginationKey != null) {
+                    _ensurePages(pageSize);
+                  }
+                  return _activeMode == ReadingMode.scroll
+                      ? _buildScrollReader()
+                      : _buildPageReader();
+                },
+              ),
+      ),
     );
   }
 

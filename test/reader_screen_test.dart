@@ -411,6 +411,28 @@ void main() {
     expect((padding.padding as EdgeInsets).bottom, 40);
   });
 
+  testWidgets('reader content stays above the bottom system bar', (
+    tester,
+  ) async {
+    tester.view.padding = const FakeViewPadding(bottom: 32);
+    addTearDown(tester.view.resetPadding);
+    final safeBottom =
+        (tester.view.physicalSize.height - tester.view.padding.bottom) /
+        tester.view.devicePixelRatio;
+
+    for (final mode in [ReadingMode.scroll, ReadingMode.page]) {
+      final store = _MemoryStore()..updateSettings(ReaderSettings(mode: mode));
+      await tester.pumpWidget(const SizedBox.shrink());
+      await _pumpReader(tester, store, _longText);
+      await tester.pumpAndSettle();
+
+      final reader = mode == ReadingMode.scroll
+          ? find.byType(ScrollablePositionedList)
+          : find.byType(PageTurnView);
+      expect(tester.getBottomRight(reader).dy, safeBottom, reason: mode.name);
+    }
+  });
+
   testWidgets('reader applies vertical page turns to document progress', (
     tester,
   ) async {
