@@ -313,20 +313,19 @@ class PageTurnViewState extends State<PageTurnView>
                       ? previous
                       : null;
                   final adjacentStart = progress < 0 ? extent : -extent;
-                  final incoming = adjacent != null && progress.abs() >= .5;
-                  final visiblePage = incoming ? adjacent : current;
-                  final offsetValue = incoming ? adjacentStart + value : value;
-                  final opacity = incoming
-                      ? (progress.abs() - .5) * 2
-                      : 1 - progress.abs() * 2;
-                  return SizedBox.expand(
-                    child: Opacity(
-                      opacity: opacity.clamp(0, 1).toDouble(),
-                      child: Transform.translate(
-                        offset: _translation(axis, offsetValue),
-                        child: visiblePage,
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      if (adjacent != null)
+                        Transform.translate(
+                          offset: _translation(axis, adjacentStart + value),
+                          child: adjacent,
+                        ),
+                      Transform.translate(
+                        offset: _translation(axis, value),
+                        child: current,
                       ),
-                    ),
+                    ],
                   );
                 },
               ),

@@ -314,10 +314,12 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   }
 
   TextStyle get _textStyle => TextStyle(
+    inherit: false,
     color: Color(_settings.foreground.value),
     fontFamily: fontFamilyFor(_settings.fontFileName),
-    fontSize: _settings.fontSize,
+    fontSize: MediaQuery.textScalerOf(context).scale(_settings.fontSize),
     height: _settings.lineHeight,
+    textBaseline: TextBaseline.alphabetic,
   );
 
   @override
@@ -528,6 +530,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                 paragraphIndent: _settings.paragraphIndent,
               ).text,
               style: _textStyle,
+              textScaler: TextScaler.noScaling,
             );
           },
         ),
@@ -598,6 +601,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                 paragraphIndent: _settings.paragraphIndent,
               ).text,
               style: _textStyle,
+              textScaler: TextScaler.noScaling,
             ),
           ),
         );
@@ -639,6 +643,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   }
 
   void _ensurePages(Size size) {
+    final textStyle = _textStyle;
     final key = jsonEncode({
       'algorithm': 6,
       'path': widget.path,
@@ -648,7 +653,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       'encoding': widget.encoding.name,
       'width': size.width,
       'height': size.height,
-      'fontSize': _settings.fontSize,
+      'fontSize': textStyle.fontSize,
       'fontFileName': _settings.fontFileName,
       'fontFileVersion': widget.fontLibrary?.versionFor(_settings.fontFileName),
       'lineHeight': _settings.lineHeight,
@@ -687,7 +692,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       final pages = await widget.paginator(
         text: widget.text,
         size: size,
-        style: _textStyle,
+        style: textStyle,
         paragraphIndent: _settings.paragraphIndent,
         onProgress: (progress) {
           if (!mounted || generation != _paginationGeneration) return;

@@ -153,43 +153,6 @@ void main() {
     expect(page.value, 1);
   });
 
-  testWidgets('transition renders one page at a time on both axes', (
-    tester,
-  ) async {
-    for (final direction in [
-      PageTurnDirection.horizontal,
-      PageTurnDirection.vertical,
-    ]) {
-      final page = ValueNotifier(1);
-      addTearDown(page.dispose);
-      await _pumpPager(tester, page, direction);
-      final rect = tester.getRect(find.byType(PageTurnView));
-      final extent = direction == PageTurnDirection.horizontal
-          ? rect.width
-          : rect.height;
-      final firstMove = direction == PageTurnDirection.horizontal
-          ? Offset(-extent * .25, 0)
-          : Offset(0, -extent * .25);
-      final secondMove = direction == PageTurnDirection.horizontal
-          ? Offset(-extent * .5, 0)
-          : Offset(0, -extent * .5);
-
-      final gesture = await tester.startGesture(rect.center);
-      await gesture.moveBy(firstMove);
-      await tester.pump();
-      expect(find.byKey(const ValueKey(1)), findsNWidgets(2));
-      expect(find.byKey(const ValueKey(2)), findsNothing);
-
-      await gesture.moveBy(secondMove);
-      await tester.pump();
-      expect(find.byKey(const ValueKey(1)), findsNothing);
-      expect(find.byKey(const ValueKey(2)), findsNWidgets(2));
-
-      await gesture.cancel();
-      await tester.pumpAndSettle();
-    }
-  });
-
   testWidgets('keeps fractional drag progress through resize and movement', (
     tester,
   ) async {
@@ -310,8 +273,6 @@ void main() {
       ),
       isTrue,
     );
-    expect(find.text('page 0'), findsNothing);
-    expect(find.text('page 1'), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 100));
     expect(page.value, 1);
   });

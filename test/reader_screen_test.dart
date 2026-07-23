@@ -19,6 +19,59 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
 
 void main() {
+  testWidgets('페이지 계산과 본문은 같은 시스템 글자 배율을 사용한다', (tester) async {
+    const text = '본문';
+    TextStyle? measuredStyle;
+    final store = _MemoryStore()
+      ..updateSettings(
+        const ReaderSettings(mode: ReadingMode.page, fontSize: 20),
+      );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.5)),
+            child: ReaderView(
+              path: '/book.txt',
+              title: 'book.txt',
+              text: text,
+              encoding: TextEncoding.utf8,
+              store: store,
+              paginator:
+                  ({
+                    required text,
+                    required size,
+                    required style,
+                    required paragraphIndent,
+                    onProgress,
+                    onBatch,
+                    onLayout,
+                    isCancelled,
+                  }) async {
+                    measuredStyle = style;
+                    final pages = [TextPage(start: 0, end: text.length)];
+                    onBatch?.call(pages);
+                    return pages;
+                  },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final pageText = tester.widget<SelectableText>(
+      find.widgetWithText(SelectableText, text),
+    );
+    expect(measuredStyle?.fontSize, 30);
+    expect(pageText.style, measuredStyle);
+    expect(pageText.style?.inherit, isFalse);
+    expect(pageText.textScaler, TextScaler.noScaling);
+  });
+
   testWidgets('선택 글꼴을 본문에 적용하고 글꼴별 페이지 캐시를 사용한다', (tester) async {
     const text = '본문';
     final cache = _MemoryPageIndexCache();
