@@ -8,6 +8,8 @@ import 'package:charset_converter/charset_converter.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'strings.dart';
+
 enum TextEncoding { utf8, utf16le, utf16be, cp949 }
 
 const maxSupportedTextFileBytes = 64 * 1024 * 1024;
@@ -27,8 +29,7 @@ class TextFileTooLargeException implements Exception {
   @override
   String toString() {
     final encodingLabel = encoding == null ? '' : ' (${encoding!.name})';
-    return '파일이 너무 큽니다$encodingLabel: '
-        '$actualBytes바이트 / 최대 $maximumBytes바이트';
+    return AppStrings.fileTooLarge(actualBytes, maximumBytes, encodingLabel);
   }
 }
 

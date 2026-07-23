@@ -1,7 +1,10 @@
 import 'dart:io';
 
 import 'package:file_selector/file_selector.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+
+import 'strings.dart';
 
 typedef FontRegistrar = Future<void> Function(String family, Uint8List bytes);
 typedef FontCopier = Future<void> Function(File source, File target);
@@ -29,7 +32,7 @@ String? fontFamilyFor(String? fileName) =>
 
 Future<String?> pickFontFile() async {
   const fonts = XTypeGroup(
-    label: '글꼴 파일',
+    label: AppStrings.fontFile,
     extensions: ['ttf', 'otf'],
     mimeTypes: ['font/ttf', 'font/otf'],
   );
@@ -90,7 +93,7 @@ class FontLibrary {
 
   Future<ImportedFont> importFont(String sourcePath) async {
     if (!_isFontPath(sourcePath)) {
-      throw const FormatException('지원하는 글꼴은 TTF 또는 OTF 파일입니다.');
+      throw const FormatException(AppStrings.supportedFontsOnly);
     }
     final source = File(sourcePath);
     await _validateFont(source);
@@ -108,7 +111,10 @@ class FontLibrary {
     } catch (error, stackTrace) {
       try {
         if (await target.exists()) await target.delete();
-      } catch (_) {}
+      } catch (cleanupError, cleanupStackTrace) {
+        debugPrint('Failed to remove an incomplete font copy: $cleanupError');
+        debugPrintStack(stackTrace: cleanupStackTrace);
+      }
       Error.throwWithStackTrace(error, stackTrace);
     }
   }
@@ -126,7 +132,9 @@ class FontLibrary {
       if (font == null) return false;
       await loadFont(font);
       return true;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Failed to load the selected font: $error');
+      debugPrintStack(stackTrace: stackTrace);
       return false;
     }
   }
@@ -167,10 +175,10 @@ class FontLibrary {
   static Future<void> _validateFont(File file) async {
     final stat = await file.stat();
     if (stat.size > maxImportedFontBytes) {
-      throw const FormatException('글꼴 파일 크기는 32MB 이하여야 합니다.');
+      throw const FormatException(AppStrings.fontTooLarge);
     }
     if (stat.size < 4) {
-      throw const FormatException('올바른 TTF 또는 OTF 글꼴 파일이 아닙니다.');
+      throw const FormatException(AppStrings.invalidFont);
     }
 
     final handle = await file.open();
@@ -186,7 +194,7 @@ class FontLibrary {
         _matches(header, const [0x74, 0x72, 0x75, 0x65]) ||
         _matches(header, const [0x74, 0x74, 0x63, 0x66]);
     if (!valid) {
-      throw const FormatException('올바른 TTF 또는 OTF 글꼴 파일이 아닙니다.');
+      throw const FormatException(AppStrings.invalidFont);
     }
   }
 

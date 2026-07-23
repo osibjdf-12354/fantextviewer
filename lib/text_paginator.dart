@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import 'strings.dart';
 import 'text_document.dart';
 
 typedef PaginationBatchCallback = void Function(List<TextPage> pages);
@@ -28,7 +29,7 @@ Future<List<TextPage>> paginateText({
 }) async {
   if (text.isEmpty) return const [];
   if (size.width <= 0 || size.height <= 0) {
-    throw ArgumentError.value(size, 'size', '페이지 크기는 0보다 커야 합니다.');
+    throw ArgumentError.value(size, 'size', AppStrings.positivePageSize);
   }
 
   final pages = <TextPage>[];
@@ -86,7 +87,7 @@ Future<List<TextPage>> paginateTextWindow({
 }) async {
   if (text.isEmpty) return const [];
   if (size.width <= 0 || size.height <= 0) {
-    throw ArgumentError.value(size, 'size', '페이지 크기는 0보다 커야 합니다.');
+    throw ArgumentError.value(size, 'size', AppStrings.positivePageSize);
   }
   if (maxPages < 1) throw ArgumentError.value(maxPages, 'maxPages');
 

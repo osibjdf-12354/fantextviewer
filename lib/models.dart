@@ -1,3 +1,5 @@
+import 'strings.dart';
+
 enum ReadingMode { scroll, page, tap }
 
 enum PageTurnDirection { horizontal, vertical, both }
@@ -53,10 +55,10 @@ class RgbColor {
     final green = json['green'];
     final blue = json['blue'];
     if (red is! num || green is! num || blue is! num) {
-      throw const FormatException('잘못된 RGB 값');
+      throw const FormatException(AppStrings.invalidRgb);
     }
     final color = tryCreate(red.toInt(), green.toInt(), blue.toInt());
-    if (color == null) throw const FormatException('잘못된 RGB 값');
+    if (color == null) throw const FormatException(AppStrings.invalidRgb);
     return color;
   }
 
@@ -374,7 +376,7 @@ class AppData {
   factory AppData.fromJson(Map<String, dynamic> json) {
     final schemaVersion = json['schemaVersion'];
     if (schemaVersion is num && schemaVersion.toInt() > currentSchemaVersion) {
-      throw FormatException('지원하지 않는 저장 데이터 버전: $schemaVersion');
+      throw FormatException(AppStrings.unsupportedSchema(schemaVersion));
     }
 
     final rawSettings = json['settings'];

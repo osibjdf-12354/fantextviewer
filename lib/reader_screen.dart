@@ -16,37 +16,13 @@ import 'models.dart';
 import 'page_index_cache.dart';
 import 'page_turn_view.dart';
 import 'reader_controller.dart';
+import 'reader_pagination_coordinator.dart';
 import 'reader_settings_sheet.dart';
+import 'strings.dart';
 import 'text_document.dart';
 import 'text_paginator.dart';
 
 export 'reader_settings_sheet.dart' show contrastRatio;
-
-typedef ReaderPaginator =
-    Future<List<TextPage>> Function({
-      required String text,
-      required Size size,
-      required TextStyle style,
-      required int paragraphIndent,
-      ValueChanged<double>? onProgress,
-      PaginationBatchCallback? onBatch,
-      TextLayoutCallback? onLayout,
-      bool Function()? isCancelled,
-    });
-
-typedef ReaderWindowPaginator =
-    Future<List<TextPage>> Function({
-      required String text,
-      required int startOffset,
-      required Size size,
-      required TextStyle style,
-      required int paragraphIndent,
-      TextLayoutCallback? onLayout,
-      bool Function()? isCancelled,
-    });
-
-const _eagerScrollPaginationLimit = 256 * 1024;
-const _initialPaginationPageBudget = 32;
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
@@ -98,7 +74,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || generation != _generation) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('큰 파일을 여는 중입니다. 잠시 기다려 주세요.')),
+            const SnackBar(content: Text(AppStrings.openingLargeFile)),
           );
         });
       }
@@ -106,7 +82,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
       final decodedStat = await file.stat();
       if (decodedStat.size != stat.size ||
           decodedStat.modified.toUtc() != stat.modified.toUtc()) {
-        throw const FileSystemException('읽는 동안 파일이 변경되었습니다. 다시 시도해 주세요.');
+        throw const FileSystemException(AppStrings.fileChangedWhileReading);
       }
       if (!mounted || generation != _generation) return;
 
@@ -150,7 +126,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
                     children: [
                       const Icon(Icons.error_outline, size: 48),
                       const SizedBox(height: 16),
-                      const Text('파일을 읽지 못했습니다.'),
+                      const Text(AppStrings.fileReadFailed),
                       const SizedBox(height: 8),
                       Text(
                         '$_error',
@@ -164,14 +140,14 @@ class _ReaderScreenState extends State<ReaderScreen> {
                         children: [
                           FilledButton(
                             onPressed: _load,
-                            child: const Text('다시 시도'),
+                            child: const Text(AppStrings.retry),
                           ),
                           PopupMenuButton<TextEncoding>(
                             onSelected: _load,
                             itemBuilder: _encodingItems,
                             child: const Padding(
                               padding: EdgeInsets.all(12),
-                              child: Text('인코딩으로 열기'),
+                              child: Text(AppStrings.openWithEncoding),
                             ),
                           ),
                         ],
@@ -247,24 +223,9 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   final _itemScrollController = ItemScrollController();
   final _itemPositionsListener = ItemPositionsListener.create();
   final _pageTurnKey = GlobalKey<PageTurnViewState>();
-  Timer? _autoTimer;
-  bool _autoMode = false;
-  int _autoPauseDepth = 0;
-  bool _appActive = true;
-  List<TextPage>? _pages;
-  int? _pageIndex;
-  int? _pendingTargetPage;
-  int? _pendingPageOffset;
+  late final ReaderPaginationCoordinator _pagination;
   int? _pendingScrollOffset;
   Size? _pageSize;
-  ({List<TextPage> pages, int firstPage})? _pageWindow;
-  int _pageWindowGeneration = 0;
-  int _navigationGeneration = 0;
-  int _displayPageNumber = 1;
-  String? _paginationKey;
-  int _paginationGeneration = 0;
-  bool _paginationComplete = false;
-  bool _fullPaginationRequested = false;
   bool _allowPop = false;
   String? _scrollChunkLayoutKey;
   String? _pendingScrollChunkLayoutKey;
@@ -274,12 +235,11 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
 
   ReaderSettings get _settings => _controller.settings;
   int get _offset => _controller.offset;
-  List<TextPage>? get _completePages => _paginationComplete ? _pages : null;
-  ReadingMode get _activeMode => _autoMode ? ReadingMode.page : _settings.mode;
-  PageTurnDirection get _activePageTurnDirection =>
-      _autoMode ? PageTurnDirection.vertical : _settings.pageTurnDirection;
-  bool get _isPaged => _activeMode != ReadingMode.scroll;
-
+  ReadingMode get _activeMode =>
+      _controller.autoMode ? ReadingMode.page : _settings.mode;
+  PageTurnDirection get _activePageTurnDirection => _controller.autoMode
+      ? PageTurnDirection.vertical
+      : _settings.pageTurnDirection;
   int get _fallbackCharactersPerPage {
     final size = _pageSize;
     if (size == null) return 400;
@@ -295,48 +255,10 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     return charactersPerLine * linesPerPage;
   }
 
-  int get _displayTotalPages {
-    final exactPages = _completePages;
-    if (exactPages != null) return exactPages.length;
-    return estimatedPageCount(
-      widget.text.length,
-      _pages ?? const [],
-      fallbackCharactersPerPage: _fallbackCharactersPerPage,
-    );
-  }
-
-  int get _currentPageNumber {
-    if (_pageWindow != null) return _displayPageNumber;
-    final pages = _pages;
-    if (pages != null &&
-        pages.isNotEmpty &&
-        (_paginationComplete || _offset < pages.last.end)) {
-      return pageForOffset(pages, _offset) + 1;
-    }
-    return estimatedPageForOffset(
-      _offset,
-      textLength: widget.text.length,
-      totalPages: _displayTotalPages,
-    );
-  }
-
-  bool get _hasIndexedCurrentPage {
-    final pages = _pages;
-    return _pageWindow == null &&
-        pages != null &&
-        pages.isNotEmpty &&
-        (_paginationComplete || _offset < pages.last.end);
-  }
-
-  String get _pageIndicatorLabel {
-    if (!_hasIndexedCurrentPage ||
-        (_settings.showTotalPages && !_paginationComplete)) {
-      return '계산 중';
-    }
-    return _settings.showTotalPages
-        ? '$_currentPageNumber/${_completePages!.length}'
-        : '$_currentPageNumber';
-  }
+  int get _displayTotalPages => _pagination.displayTotalPages;
+  int get _currentPageNumber => _pagination.currentPageNumber;
+  String get _pageIndicatorLabel =>
+      _pagination.pageIndicatorLabel(showTotalPages: _settings.showTotalPages);
 
   TextStyle get _textStyle => TextStyle(
     inherit: false,
@@ -360,6 +282,28 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           textLength: widget.text.length,
           text: widget.text,
         );
+    _controller.addListener(_onControllerChanged);
+    _pagination = ReaderPaginationCoordinator(
+      text: widget.text,
+      path: widget.path,
+      encoding: widget.encoding,
+      fileSize: widget.fileSize,
+      modified: widget.modified,
+      pageIndexCache: widget.pageIndexCache,
+      paginator: widget.paginator,
+      windowPaginator: widget.windowPaginator,
+      readerController: _controller,
+      settings: () => _settings,
+      currentOffset: () => _offset,
+      activeMode: () => _activeMode,
+      fallbackCharactersPerPage: () => _fallbackCharactersPerPage,
+      onViewChanged: _onPaginationViewChanged,
+      onJumpToOffset: _jumpToOffset,
+      onSetOffset: _setOffset,
+      onMessage: _showMessage,
+      onRestartAuto: _restartAutoTimer,
+      isActive: () => mounted,
+    );
     _chunks = splitText(widget.text, maxChars: 700);
     _itemPositionsListener.itemPositions.addListener(_recordScrollPosition);
     if (_settings.keepAwake) _syncWakelock();
@@ -369,7 +313,8 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _itemPositionsListener.itemPositions.removeListener(_recordScrollPosition);
-    _autoTimer?.cancel();
+    _pagination.dispose();
+    _controller.removeListener(_onControllerChanged);
     if (_ownsController) _controller.dispose();
     unawaited(WakelockPlus.disable());
     super.dispose();
@@ -378,20 +323,30 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final active = state == AppLifecycleState.resumed;
-    if (_appActive == active) return;
-    _appActive = active;
+    if (_controller.appActive == active) return;
+    _controller.setAppActive(active);
     if (active) {
       if (_controller.lastSaveError != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _showMessage('읽기 위치를 저장하지 못했습니다.');
+          if (mounted) {
+            _showMessage(AppStrings.saveReadingPositionFailed);
+          }
         });
       }
       _restartAutoTimer();
     } else {
-      _autoTimer?.cancel();
+      _controller.cancelAutoAdvance();
       _pageTurnKey.currentState?.cancelTurn();
       _flushInBackground();
     }
+  }
+
+  void _onControllerChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _onPaginationViewChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -413,7 +368,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           title: Text(widget.title),
           actions: [
             IconButton(
-              tooltip: '북마크 추가',
+              tooltip: AppStrings.addBookmark,
               onPressed: widget.text.isEmpty ? null : _addBookmark,
               icon: const Icon(Icons.bookmark_add_outlined),
             ),
@@ -429,7 +384,10 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         },
         body: widget.text.isEmpty
             ? Center(
-                child: Text('빈 파일입니다.', style: TextStyle(color: foreground)),
+                child: Text(
+                  AppStrings.emptyFile,
+                  style: TextStyle(color: foreground),
+                ),
               )
             : Stack(
                 children: [
@@ -446,12 +404,25 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                               ),
                               math.max(1, constraints.maxHeight),
                             );
-                            _pageSize = pageSize;
-                            if (_activeMode == ReadingMode.scroll) {
-                              _ensureScrollChunks(pageSize);
-                            }
-                            _ensurePages(pageSize);
-                            return _activeMode == ReadingMode.scroll
+                            final mode = _activeMode;
+                            WidgetsBinding.instance.addPostFrameCallback((
+                              _,
+                            ) async {
+                              if (!mounted) return;
+                              _pageSize = pageSize;
+                              if (_activeMode == ReadingMode.scroll) {
+                                _ensureScrollChunks(pageSize);
+                              }
+                              await _pagination.ensurePages(
+                                size: pageSize,
+                                style: _textStyle,
+                                fontFileName: _settings.fontFileName,
+                                fontFileVersion: widget.fontLibrary?.versionFor(
+                                  _settings.fontFileName,
+                                ),
+                              );
+                            });
+                            return mode == ReadingMode.scroll
                                 ? _buildScrollReader()
                                 : _buildPageReader();
                           },
@@ -480,13 +451,13 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           children: [
             ListTile(
               title: Text(widget.title),
-              subtitle: Text('현재 $_currentPageNumber페이지'),
+              subtitle: Text(AppStrings.currentPage(_currentPageNumber)),
             ),
             SwitchListTile(
               key: const Key('auto-mode-switch'),
               secondary: const Icon(Icons.play_circle_outline),
-              title: const Text('오토모드'),
-              value: _autoMode,
+              title: const Text(AppStrings.autoMode),
+              value: _controller.autoMode,
               onChanged:
                   widget.text.isEmpty || MediaQuery.disableAnimationsOf(context)
                   ? null
@@ -495,17 +466,25 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
             const Divider(),
             _drawerItem(
               Icons.folder_open,
-              '파일 열기',
+              AppStrings.openFile,
               widget.onOpenFile == null
                   ? null
                   : () async => widget.onOpenFile!(),
             ),
-            _drawerItem(Icons.pin_drop_outlined, '위치 이동', _showGoToDialog),
-            _drawerItem(Icons.search, '본문 검색', _showSearchDialog),
-            _drawerItem(Icons.bookmarks_outlined, '북마크', _showBookmarks),
-            _drawerItem(Icons.tune, '표시 설정', _showSettings),
-            _drawerItem(Icons.info_outline, '파일 정보', _showFileInfo),
-            _drawerItem(Icons.exit_to_app, '앱 종료', _exitApp),
+            _drawerItem(
+              Icons.pin_drop_outlined,
+              AppStrings.goToPosition,
+              _showGoToDialog,
+            ),
+            _drawerItem(Icons.search, AppStrings.searchBody, _showSearchDialog),
+            _drawerItem(
+              Icons.bookmarks_outlined,
+              AppStrings.bookmarks,
+              _showBookmarks,
+            ),
+            _drawerItem(Icons.tune, AppStrings.displaySettings, _showSettings),
+            _drawerItem(Icons.info_outline, AppStrings.fileInfo, _showFileInfo),
+            _drawerItem(Icons.exit_to_app, AppStrings.exitApp, _exitApp),
           ],
         ),
       ),
@@ -641,9 +620,9 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   }
 
   Widget _buildPageReader() {
-    final window = _pageWindow;
-    final pages = window?.pages ?? _pages;
-    final pageIndex = _pageIndex;
+    final window = _pagination.pageWindow;
+    final pages = window?.pages ?? _pagination.pages;
+    final pageIndex = _pagination.pageIndex;
     if (pages == null || pageIndex == null || pages.isEmpty) {
       return ValueListenableBuilder<PaginationActivity>(
         valueListenable: _controller.paginationActivity,
@@ -655,7 +634,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                 value: activity.progress == 0 ? null : activity.progress,
               ),
               const SizedBox(height: 12),
-              const Text('페이지를 계산하고 있습니다.'),
+              const Text(AppStrings.calculatingPages),
             ],
           ),
         ),
@@ -672,25 +651,9 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       onInteractionStart: _pauseAuto,
       onInteractionEnd: _resumeAuto,
       onPageChanged: (index) {
-        final activePages = _pageWindow?.pages ?? _pages;
-        if (!identical(activePages, pages)) return;
-        _registerManualNavigation();
-        final nextOffset = pages[index].start;
-        setState(() {
-          _pageIndex = index;
-          _displayPageNumber = window == null
-              ? index + 1
-              : window.firstPage + index;
-          _pendingPageOffset = null;
-          _pendingScrollOffset = null;
-          _setOffset(nextOffset);
-        });
-        if (window == null &&
-            !_paginationComplete &&
-            index >= pages.length - 4) {
-          _requestFullPagination();
-        }
-        _restartAutoTimer();
+        if (!_pagination.matchesActivePages(pages)) return;
+        _pendingScrollOffset = null;
+        _pagination.updateCurrentPage(index);
       },
       itemBuilder: (context, index) {
         final page = pages[index];
@@ -783,22 +746,20 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
             ),
             IconButton(
               key: const Key('search-previous'),
-              tooltip: '이전 검색 결과',
+              tooltip: AppStrings.previousSearchResult,
               onPressed: () => _moveSearchResult(forward: false),
               icon: const Icon(Icons.keyboard_arrow_up),
             ),
             IconButton(
               key: const Key('search-next'),
-              tooltip: '다음 검색 결과',
+              tooltip: AppStrings.nextSearchResult,
               onPressed: () => _moveSearchResult(forward: true),
               icon: const Icon(Icons.keyboard_arrow_down),
             ),
             IconButton(
               key: const Key('search-close'),
-              tooltip: '검색 종료',
-              onPressed: () {
-                setState(_controller.clearSearch);
-              },
+              tooltip: AppStrings.endSearch,
+              onPressed: _controller.clearSearch,
               icon: const Icon(Icons.close),
             ),
           ],
@@ -845,181 +806,6 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     );
   }
 
-  void _requestFullPagination() {
-    if (_fullPaginationRequested ||
-        widget.text.length <= _eagerScrollPaginationLimit) {
-      return;
-    }
-    final size = _pageSize;
-    if (size == null) return;
-    _fullPaginationRequested = true;
-    _paginationKey = null;
-    _ensurePages(size);
-    if (_isPaged) setState(() {});
-  }
-
-  void _ensurePages(Size size) {
-    final textStyle = _textStyle;
-    final key = jsonEncode({
-      'algorithm': 6,
-      'path': widget.path,
-      'fileSize': widget.fileSize,
-      'modified': widget.modified?.toUtc().toIso8601String(),
-      'textLength': widget.text.length,
-      'encoding': widget.encoding.name,
-      'width': size.width,
-      'height': size.height,
-      'fontSize': textStyle.fontSize,
-      'fontFileName': _settings.fontFileName,
-      'fontFileVersion': widget.fontLibrary?.versionFor(_settings.fontFileName),
-      'lineHeight': _settings.lineHeight,
-      'horizontalPadding': _settings.horizontalPadding,
-      'paragraphIndent': _settings.paragraphIndent,
-      'fullPagination': _fullPaginationRequested || _settings.showTotalPages,
-    });
-    if (_paginationKey == key) return;
-    _paginationKey = key;
-    _pageWindowGeneration++;
-    _pageWindow = null;
-    _pages = null;
-    _paginationComplete = false;
-    _pageIndex = null;
-    final generation = ++_paginationGeneration;
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!mounted || generation != _paginationGeneration) return;
-      _controller.resetPaginationActivity();
-      final cache = widget.pageIndexCache;
-      if (cache != null) {
-        final cached = await cache.load(
-          signature: key,
-          textLength: widget.text.length,
-        );
-        if (!mounted || generation != _paginationGeneration) return;
-        if (cached != null) {
-          _setPaginationPages(cached, complete: true);
-          _controller.updatePaginationProgress(1);
-          return;
-        }
-      }
-      if (_isPaged &&
-          widget.text.length > _eagerScrollPaginationLimit &&
-          _offset > 0) {
-        await _jumpToPageNumber(_currentPageNumber, sourceOffset: _offset);
-        if (!mounted || generation != _paginationGeneration) return;
-      }
-      final progressivePages = <TextPage>[];
-      final bounded =
-          widget.text.length > _eagerScrollPaginationLimit &&
-          !_fullPaginationRequested &&
-          !_settings.showTotalPages;
-      final pages = await widget.paginator(
-        text: widget.text,
-        size: size,
-        style: textStyle,
-        paragraphIndent: _settings.paragraphIndent,
-        onProgress: (progress) {
-          if (!mounted || generation != _paginationGeneration) return;
-          _controller.updatePaginationProgress(progress);
-        },
-        onBatch: (batch) {
-          if (!mounted ||
-              generation != _paginationGeneration ||
-              batch.isEmpty) {
-            return;
-          }
-          progressivePages.addAll(batch);
-          _setPaginationPages(progressivePages, complete: false);
-        },
-        isCancelled: () =>
-            !mounted ||
-            generation != _paginationGeneration ||
-            (bounded &&
-                progressivePages.length >= _initialPaginationPageBudget),
-      );
-      if (!mounted || generation != _paginationGeneration) return;
-      final complete =
-          pages.isNotEmpty &&
-          pages.first.start == 0 &&
-          pages.last.end == widget.text.length;
-      _setPaginationPages(pages, complete: complete);
-      if (complete) _controller.updatePaginationProgress(1);
-      if (complete && cache != null) {
-        await cache.save(
-          signature: key,
-          textLength: widget.text.length,
-          pages: pages,
-        );
-      }
-    });
-  }
-
-  void _setPaginationPages(List<TextPage> pages, {required bool complete}) {
-    final initialPage = pages.isEmpty ? 0 : pageForOffset(pages, _offset);
-    if (complete) {
-      _pageWindowGeneration++;
-      _pageWindow = null;
-      _pageIndex = pages.isEmpty ? null : initialPage;
-      _displayPageNumber = initialPage + 1;
-    } else if (_pageWindow == null &&
-        _pageIndex == null &&
-        pages.isNotEmpty &&
-        pages.last.end > _offset) {
-      _pageIndex = initialPage;
-    }
-    if (_activeMode == ReadingMode.scroll) {
-      _pages = pages;
-      _paginationComplete = complete;
-      _controller.notifyPaginationChanged();
-    } else {
-      setState(() {
-        _pages = pages;
-        _paginationComplete = complete;
-      });
-    }
-    final pendingTargetPage = _pendingTargetPage;
-    if (pendingTargetPage != null) {
-      if (pendingTargetPage <= pages.length) {
-        final targetOffset = pages[pendingTargetPage - 1].start;
-        final generation = _paginationGeneration;
-        final navigationGeneration = _navigationGeneration;
-        _pendingTargetPage = null;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted ||
-              generation != _paginationGeneration ||
-              navigationGeneration != _navigationGeneration) {
-            return;
-          }
-          _jumpToOffset(targetOffset);
-        });
-      } else if (complete) {
-        _pendingTargetPage = null;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          _showMessage('1~${pages.length} 사이 페이지를 입력해 주세요.');
-        });
-      }
-    }
-    final pendingOffset = _pendingPageOffset;
-    if (_isPaged &&
-        _pageWindow == null &&
-        pendingOffset != null &&
-        pages.isNotEmpty &&
-        (complete || pendingOffset < pages.last.end)) {
-      final page = pageForOffset(pages, pendingOffset);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || _pendingPageOffset != pendingOffset) return;
-        setState(() {
-          _pendingPageOffset = null;
-          _pageIndex = page;
-          _displayPageNumber = page + 1;
-        });
-      });
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _restartAutoTimer();
-    });
-  }
-
   void _recordScrollPosition() {
     if (_activeMode != ReadingMode.scroll || !_scrollPositionsReady) {
       return;
@@ -1057,10 +843,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       return;
     }
     _invalidateQueuedNavigation();
-    _pendingPageOffset = null;
-    setState(
-      () => _controller.updateOffset(offset, scrollAlignment: alignment),
-    );
+    _controller.updateOffset(offset, scrollAlignment: alignment);
   }
 
   int _chunkForOffset(int offset) {
@@ -1085,178 +868,26 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   }
 
   void _jumpToOffset(int offset) {
-    _navigationGeneration++;
-    _pendingTargetPage = null;
-    _pendingPageOffset = null;
-    setState(() => _setOffset(offset));
+    _setOffset(offset);
+    _pagination.navigateToOffset(offset);
     if (_activeMode == ReadingMode.scroll) {
       _pendingScrollOffset = _offset;
       if (_itemScrollController.isAttached) {
         _itemScrollController.jumpTo(index: _chunkForOffset(_offset));
       }
-      return;
-    }
-    final window = _pageWindow;
-    if (window != null) {
-      if (_offset >= window.pages.first.start &&
-          _offset < window.pages.last.end) {
-        final page = pageForOffset(window.pages, _offset);
-        setState(() {
-          _pageIndex = page;
-          _displayPageNumber = window.firstPage + page;
-        });
-      } else {
-        final total = _displayTotalPages;
-        setState(() => _pageIndex = null);
-        unawaited(
-          _jumpToPageNumber(
-            estimatedPageForOffset(
-              _offset,
-              textLength: widget.text.length,
-              totalPages: total,
-            ),
-            sourceOffset: _offset,
-          ),
-        );
-      }
-      return;
-    }
-    final pages = _pages;
-    if (pages != null &&
-        pages.isNotEmpty &&
-        (_paginationComplete || _offset < pages.last.end)) {
-      final page = pageForOffset(pages, _offset);
-      setState(() {
-        _pageIndex = page;
-        _displayPageNumber = page + 1;
-      });
-    } else {
-      final totalPages = _displayTotalPages;
-      setState(() => _pageIndex = null);
-      unawaited(
-        _jumpToPageNumber(
-          estimatedPageForOffset(
-            _offset,
-            textLength: widget.text.length,
-            totalPages: totalPages,
-          ),
-          sourceOffset: _offset,
-        ),
-      );
     }
   }
 
-  Future<void> _jumpToPageNumber(int page, {int? sourceOffset}) async {
-    if (page < 1) {
-      _showMessage('1 이상의 페이지를 입력해 주세요.');
-      return;
-    }
-    final exactPages = _completePages;
-    if (exactPages != null) {
-      if (sourceOffset == null && page > exactPages.length) {
-        _showMessage('1~${exactPages.length} 사이 페이지를 입력해 주세요.');
-        return;
-      }
-      final exactPage = sourceOffset == null
-          ? page - 1
-          : pageForOffset(exactPages, sourceOffset);
-      _jumpToOffset(exactPages[exactPage].start);
-      return;
-    }
-    final indexedPages = _pages;
-    if (sourceOffset == null &&
-        indexedPages != null &&
-        page <= indexedPages.length) {
-      _jumpToOffset(indexedPages[page - 1].start);
-      return;
-    }
-    if (sourceOffset == null) {
-      _navigationGeneration++;
-      _pendingTargetPage = page;
-      _requestFullPagination();
-      _showMessage('$page페이지까지 계산하고 있습니다. 계산되는 즉시 이동합니다.');
-      return;
-    }
-
-    final totalPages = _displayTotalPages;
-    final targetOffset = sourceOffset;
-    if (_activeMode == ReadingMode.scroll) {
-      _jumpToOffset(targetOffset);
-      return;
-    }
-
-    final size = _pageSize;
-    if (size == null) return;
-    final measuredPages = _pages;
-    final charactersPerPage = measuredPages == null || measuredPages.isEmpty
-        ? _fallbackCharactersPerPage
-        : math
-              .max(1, (measuredPages.last.end / measuredPages.length).round())
-              .toInt();
-    final startOffset = math
-        .max(0, targetOffset - charactersPerPage * math.min(4, page - 1))
-        .toInt();
-    final paginationGeneration = _paginationGeneration;
-    final windowGeneration = ++_pageWindowGeneration;
-    final navigationGeneration = _navigationGeneration;
-    bool cancelled() =>
-        !mounted ||
-        paginationGeneration != _paginationGeneration ||
-        windowGeneration != _pageWindowGeneration ||
-        navigationGeneration != _navigationGeneration;
-
-    var pages = await widget.windowPaginator(
-      text: widget.text,
-      startOffset: startOffset,
-      size: size,
-      style: _textStyle,
-      paragraphIndent: _settings.paragraphIndent,
-      isCancelled: cancelled,
-    );
-    if (cancelled()) return;
-    if (pages.isNotEmpty &&
-        targetOffset >= pages.last.end &&
-        pages.last.end < widget.text.length) {
-      pages = await widget.windowPaginator(
-        text: widget.text,
-        startOffset: targetOffset,
-        size: size,
-        style: _textStyle,
-        paragraphIndent: _settings.paragraphIndent,
-        isCancelled: cancelled,
-      );
-    }
-    if (cancelled() || pages.isEmpty) return;
-
-    var localPage = pageForOffset(pages, targetOffset);
-    if (localPage >= page) {
-      final drop = localPage - (page - 1);
-      pages = pages.sublist(drop);
-      localPage -= drop;
-    }
-    final firstPage = page - localPage;
-    final remainingPages = totalPages - firstPage + 1;
-    if (pages.length > remainingPages) {
-      pages = pages.sublist(0, remainingPages);
-    }
-
-    setState(() {
-      _pageWindow = (pages: pages, firstPage: firstPage);
-      _pageIndex = localPage;
-      _displayPageNumber = page;
-      _pendingPageOffset = null;
-      _setOffset(sourceOffset);
-    });
-    _restartAutoTimer();
-  }
+  Future<void> _jumpToPageNumber(int page, {int? sourceOffset}) =>
+      _pagination.jumpToPageNumber(page, sourceOffset: sourceOffset);
 
   void _setAutoMode(bool enabled) {
-    if (_autoMode == enabled) return;
-    _autoTimer?.cancel();
+    if (_controller.autoMode == enabled) return;
+    _controller.cancelAutoAdvance();
     if (!enabled && _settings.mode == ReadingMode.scroll) {
       _pendingScrollOffset = _offset;
     }
-    setState(() => _autoMode = enabled);
+    _controller.setAutoMode(enabled);
     if (enabled) _jumpToOffset(_offset);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _restartAutoTimer();
@@ -1264,49 +895,46 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   }
 
   void _restartAutoTimer() {
-    _autoTimer?.cancel();
-    if (!_autoMode ||
-        _autoPauseDepth > 0 ||
-        !_appActive ||
+    _controller.cancelAutoAdvance();
+    if (!_controller.canAutoAdvance ||
         MediaQuery.disableAnimationsOf(context)) {
       return;
     }
-    final pages = _pageWindow?.pages ?? _pages;
-    final index = _pageIndex;
+    final pages = _pagination.pageWindow?.pages ?? _pagination.pages;
+    final index = _pagination.pageIndex;
     if (pages == null || index == null || index >= pages.length) return;
     if (pages[index].end == widget.text.length) {
       _setAutoMode(false);
-      _showMessage('마지막 페이지입니다. 오토모드를 종료했습니다.');
+      _showMessage(AppStrings.lastPageAutoStopped);
       return;
     }
-    if (_pageWindow == null &&
-        !_paginationComplete &&
+    if (_pagination.pageWindow == null &&
+        !_pagination.complete &&
         index >= pages.length - 4) {
-      _requestFullPagination();
+      _pagination.requestFullPagination();
     }
     if (index + 1 >= pages.length) return;
-    _autoTimer = Timer(
+    _controller.scheduleAutoAdvance(
       Duration(seconds: _settings.autoPageIntervalSeconds),
-      () => unawaited(_advanceAutoPage()),
+      _advanceAutoPage,
     );
   }
 
   Future<void> _advanceAutoPage() async {
-    if (!_autoMode || _autoPauseDepth > 0 || !_appActive) return;
+    if (!_controller.canAutoAdvance) return;
     final moved =
         await _pageTurnKey.currentState?.animateNext(Axis.vertical) ?? false;
     if (!moved && mounted) _restartAutoTimer();
   }
 
   void _pauseAuto({bool cancelTurn = false}) {
-    _autoPauseDepth++;
-    _autoTimer?.cancel();
+    _controller.pauseAuto();
     if (cancelTurn) _pageTurnKey.currentState?.cancelTurn();
   }
 
   void _resumeAuto() {
-    if (_autoPauseDepth > 0) _autoPauseDepth--;
-    if (mounted && _autoPauseDepth == 0) _restartAutoTimer();
+    _controller.resumeAuto();
+    if (mounted && _controller.canAutoAdvance) _restartAutoTimer();
   }
 
   void _scheduleSave() {
@@ -1316,7 +944,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   void _addBookmark() {
     final page = _pageNumberForOffset(_offset);
     if (page == null) {
-      _showMessage('페이지를 계산하고 있습니다.');
+      _showMessage(AppStrings.calculatingPages);
       return;
     }
     final start = math.max(0, _offset - 20);
@@ -1334,39 +962,41 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       ),
     );
     _scheduleSave();
-    _showMessage('$page에 북마크를 저장했습니다.');
+    _showMessage(AppStrings.bookmarkSaved(page));
     _restartAutoTimer();
   }
 
   Future<void> _showGoToDialog() async {
     final totalPages = _displayTotalPages;
     if (totalPages < 1) {
-      _showMessage('페이지를 계산하고 있습니다.');
+      _showMessage(AppStrings.calculatingPages);
       return;
     }
-    final exactRange = _paginationComplete;
+    final exactRange = _pagination.complete;
     var value = '';
     final input = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('위치 이동'),
+        title: const Text(AppStrings.goToPosition),
         content: TextField(
           autofocus: true,
           keyboardType: TextInputType.number,
           onChanged: (next) => value = next,
           decoration: InputDecoration(
-            labelText: '페이지',
-            hintText: exactRange ? '1~$totalPages' : '약 1~$totalPages (추정)',
+            labelText: AppStrings.page,
+            hintText: exactRange
+                ? '1~$totalPages'
+                : AppStrings.approximatePageRange(totalPages),
           ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('취소'),
+            child: const Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, value),
-            child: const Text('이동'),
+            child: const Text(AppStrings.move),
           ),
         ],
       ),
@@ -1374,11 +1004,11 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     if (input == null || !mounted) return;
     final page = int.tryParse(input.trim());
     final latestTotalPages = _displayTotalPages;
-    final exactPages = _completePages;
+    final exactPages = _pagination.completePages;
     if (page == null ||
         page < 1 ||
         (exactPages != null && page > exactPages.length)) {
-      _showMessage('1~$latestTotalPages 사이 페이지를 입력해 주세요.');
+      _showMessage(AppStrings.pageRange(latestTotalPages));
       return;
     }
     await _jumpToPageNumber(page);
@@ -1389,16 +1019,16 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     final query = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('본문 검색'),
+        title: const Text(AppStrings.searchBody),
         content: TextField(autofocus: true, onChanged: (next) => value = next),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('취소'),
+            child: const Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, value),
-            child: const Text('검색'),
+            child: const Text(AppStrings.search),
           ),
         ],
       ),
@@ -1406,7 +1036,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     if (query == null || query.isEmpty || !mounted) return;
     final match = _controller.startSearch(query);
     if (match == null) {
-      _showMessage('검색 결과가 없습니다.');
+      _showMessage(AppStrings.noSearchResults);
     } else {
       _jumpToOffset(match.start);
     }
@@ -1417,7 +1047,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         ? _controller.nextSearchResult()
         : _controller.previousSearchResult();
     if (match == null) {
-      _showMessage('검색 결과가 없습니다.');
+      _showMessage(AppStrings.noSearchResults);
       return;
     }
     _jumpToOffset(match.start);
@@ -1433,7 +1063,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           if (bookmarks.isEmpty) {
             return const SizedBox(
               height: 180,
-              child: Center(child: Text('저장된 북마크가 없습니다.')),
+              child: Center(child: Text(AppStrings.noBookmarks)),
             );
           }
           return SafeArea(
@@ -1444,7 +1074,9 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                 final bookmark = bookmarks[index];
                 return ListTile(
                   title: Text(
-                    bookmark.excerpt.isEmpty ? '빈 줄' : bookmark.excerpt,
+                    bookmark.excerpt.isEmpty
+                        ? AppStrings.blankLine
+                        : bookmark.excerpt,
                   ),
                   subtitle: Text(
                     '${_pageNumberForOffset(bookmark.offset)}',
@@ -1455,7 +1087,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                     _jumpToOffset(bookmark.offset);
                   },
                   trailing: IconButton(
-                    tooltip: '북마크 삭제',
+                    tooltip: AppStrings.deleteBookmark,
                     icon: const Icon(Icons.delete_outline),
                     onPressed: () {
                       widget.store.removeBookmark(widget.path, bookmark.offset);
@@ -1501,40 +1133,31 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
 
   void _applySettings(ReaderSettings settings) {
     _registerManualNavigation();
-    _paginationGeneration++;
-    _pageWindowGeneration++;
-    _pendingPageOffset = null;
     _pendingScrollOffset = null;
     setState(() {
-      _controller.applySettings(settings);
-      _fullPaginationRequested = settings.showTotalPages;
       _scrollChunkGeneration++;
       _scrollPositionsReady = false;
       _scrollPositionChanged = false;
       _scrollChunkLayoutKey = null;
       _pendingScrollChunkLayoutKey = null;
-      _paginationKey = null;
-      _pages = null;
-      _pageWindow = null;
-      _pageIndex = null;
-      _paginationComplete = false;
     });
+    _pagination.resetForSettings(showTotalPages: settings.showTotalPages);
+    _controller.applySettings(settings);
     _syncWakelock();
   }
 
   void _registerManualNavigation() {
-    _invalidateQueuedNavigation();
+    _pagination.registerManualNavigation();
     _pendingScrollOffset = null;
   }
 
   void _invalidateQueuedNavigation() {
-    _navigationGeneration++;
-    _pendingTargetPage = null;
+    _pagination.registerManualNavigation();
   }
 
   void _flushInBackground() {
     _controller.flush().catchError((Object error, StackTrace stackTrace) {
-      debugPrint('읽기 상태 저장 실패: $error\n$stackTrace');
+      debugPrint(AppStrings.readingStateSaveDiagnostic(error, stackTrace));
     });
   }
 
@@ -1542,7 +1165,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     try {
       await _controller.flush();
     } catch (_) {
-      if (mounted) _showMessage('읽기 위치를 저장하지 못했습니다.');
+      if (mounted) _showMessage(AppStrings.saveReadingPositionFailed);
     }
     if (!mounted) return;
     setState(() => _allowPop = true);
@@ -1553,7 +1176,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     try {
       await _controller.flush();
     } catch (_) {
-      if (mounted) _showMessage('읽기 위치를 저장하지 못했습니다.');
+      if (mounted) _showMessage(AppStrings.saveReadingPositionFailed);
     }
     await SystemNavigator.pop();
   }
@@ -1565,9 +1188,13 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('파일 정보'),
+        title: const Text(AppStrings.fileInfo),
         content: SelectableText(
-          '${widget.path}\n\n크기: ${_formatBytes(widget.fileSize)}\n인코딩: ${_encodingLabel(widget.encoding)}',
+          AppStrings.fileDetails(
+            widget.path,
+            _formatBytes(widget.fileSize),
+            _encodingLabel(widget.encoding),
+          ),
         ),
         actions: [
           if (widget.onEncodingChanged != null)
@@ -1581,12 +1208,12 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
               itemBuilder: _encodingItems,
               child: const Padding(
                 padding: EdgeInsets.all(12),
-                child: Text('인코딩 변경'),
+                child: Text(AppStrings.changeEncoding),
               ),
             ),
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('닫기'),
+            child: const Text(AppStrings.close),
           ),
         ],
       ),
@@ -1599,21 +1226,8 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  int? _pageNumberForOffset(int offset) {
-    if (widget.text.isEmpty) return null;
-    if (_pageWindow != null && offset == _offset) return _displayPageNumber;
-    final pages = _pages;
-    if (pages != null &&
-        pages.isNotEmpty &&
-        (_paginationComplete || offset < pages.last.end)) {
-      return pageForOffset(pages, offset) + 1;
-    }
-    return estimatedPageForOffset(
-      offset,
-      textLength: widget.text.length,
-      totalPages: _displayTotalPages,
-    );
-  }
+  int? _pageNumberForOffset(int offset) =>
+      _pagination.pageNumberForOffset(offset);
 }
 
 List<PopupMenuEntry<TextEncoding>> _encodingItems(BuildContext context) {
@@ -1644,7 +1258,7 @@ String _encodingLabel(TextEncoding encoding) => switch (encoding) {
 String _fileName(String path) => path.split(Platform.pathSeparator).last;
 
 String _formatBytes(int? bytes) {
-  if (bytes == null) return '알 수 없음';
+  if (bytes == null) return AppStrings.unknown;
   if (bytes < 1024) return '$bytes B';
   if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
   return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';

@@ -6,6 +6,7 @@ import 'package:geulbom/app_store.dart';
 import 'package:geulbom/font_library.dart';
 import 'package:geulbom/main.dart';
 import 'package:geulbom/models.dart';
+import 'package:geulbom/strings.dart';
 
 void main() {
   test('저장한 글꼴 파일이 없으면 시스템 기본 글꼴로 복구한다', () async {
@@ -55,9 +56,9 @@ void main() {
 
     await tester.pumpWidget(GeulbomApp(store: store));
 
-    expect(find.text('판갤텍뷰'), findsOneWidget);
+    expect(find.text(AppStrings.appName), findsOneWidget);
     expect(find.byIcon(Icons.folder_open), findsWidgets);
-    expect(find.text('최근에 읽은 파일이 없습니다.'), findsOneWidget);
+    expect(find.text(AppStrings.noRecentFiles), findsOneWidget);
   });
 }
 

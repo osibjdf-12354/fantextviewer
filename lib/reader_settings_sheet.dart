@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'app_store.dart';
 import 'font_library.dart';
 import 'models.dart';
+import 'strings.dart';
 
 class ReaderSettingsSheet extends StatefulWidget {
   const ReaderSettingsSheet({
@@ -64,27 +65,30 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('표시 설정', style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              AppStrings.displaySettings,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 16),
-            const Text('읽기 방식'),
+            const Text(AppStrings.readingMethod),
             Wrap(
               spacing: 8,
               children: [
                 ChoiceChip(
-                  label: const Text('세로 스크롤'),
+                  label: const Text(AppStrings.verticalScroll),
                   selected: _draft.mode == ReadingMode.scroll,
                   onSelected: (_) =>
                       _change(_draft.copyWith(mode: ReadingMode.scroll)),
                 ),
                 ChoiceChip(
-                  label: const Text('스와이프'),
+                  label: const Text(AppStrings.swipe),
                   selected: _draft.mode == ReadingMode.page,
                   onSelected: (_) =>
                       _change(_draft.copyWith(mode: ReadingMode.page)),
                 ),
                 ChoiceChip(
                   key: const Key('reading-mode-tap'),
-                  label: const Text('탭'),
+                  label: const Text(AppStrings.tap),
                   selected: _draft.mode == ReadingMode.tap,
                   onSelected: (_) =>
                       _change(_draft.copyWith(mode: ReadingMode.tap)),
@@ -92,13 +96,13 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
               ],
             ),
             const SizedBox(height: 12),
-            const Text('페이지 넘김 방향'),
+            const Text(AppStrings.pageTurnDirection),
             Wrap(
               spacing: 8,
               children: [
                 ChoiceChip(
                   key: const Key('page-turn-horizontal'),
-                  label: const Text('좌우 넘김'),
+                  label: const Text(AppStrings.horizontalTurn),
                   selected:
                       _draft.pageTurnDirection == PageTurnDirection.horizontal,
                   onSelected: (_) => _change(
@@ -109,7 +113,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                 ),
                 ChoiceChip(
                   key: const Key('page-turn-vertical'),
-                  label: const Text('상하 넘김'),
+                  label: const Text(AppStrings.verticalTurn),
                   selected:
                       _draft.pageTurnDirection == PageTurnDirection.vertical,
                   onSelected: (_) => _change(
@@ -120,7 +124,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                 ),
                 ChoiceChip(
                   key: const Key('page-turn-both'),
-                  label: const Text('둘 다'),
+                  label: const Text(AppStrings.bothDirections),
                   selected: _draft.pageTurnDirection == PageTurnDirection.both,
                   onSelected: (_) => _change(
                     _draft.copyWith(pageTurnDirection: PageTurnDirection.both),
@@ -131,21 +135,21 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
             if (_draft.pageTurnDirection == PageTurnDirection.both) ...[
               const SizedBox(height: 4),
               Text(
-                '둘 다 모드에서는 탭 영역이 위/아래로 나뉩니다.',
+                AppStrings.bothDirectionsHint,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],
             SwitchListTile(
               key: const Key('page-turn-animation-switch'),
               contentPadding: EdgeInsets.zero,
-              title: const Text('페이지 넘김 애니메이션'),
+              title: const Text(AppStrings.pageTurnAnimation),
               value: _draft.pageTurnAnimationEnabled,
               onChanged: (value) =>
                   _change(_draft.copyWith(pageTurnAnimationEnabled: value)),
             ),
             _SettingStepper(
               settingKey: 'auto-page-interval',
-              label: '오토 페이지 간격 (초)',
+              label: AppStrings.autoPageInterval,
               value: _draft.autoPageIntervalSeconds.toDouble(),
               min: 1,
               max: 60,
@@ -156,24 +160,24 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
               ),
             ),
             Text(
-              '세로 스크롤에서도 오토모드를 켜면 스와이프·상하 넘김으로 자동 전환됩니다.',
+              AppStrings.autoModeHint,
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
-            const Text('페이지 표시'),
+            const Text(AppStrings.pageIndicator),
             Wrap(
               spacing: 8,
               children: [
                 ChoiceChip(
                   key: const Key('page-display-current'),
-                  label: const Text('현재 페이지만'),
+                  label: const Text(AppStrings.currentPageOnly),
                   selected: !_draft.showTotalPages,
                   onSelected: (_) =>
                       _change(_draft.copyWith(showTotalPages: false)),
                 ),
                 ChoiceChip(
                   key: const Key('page-display-current-total'),
-                  label: const Text('현재/전체 페이지'),
+                  label: const Text(AppStrings.currentAndTotalPages),
                   selected: _draft.showTotalPages,
                   onSelected: (_) =>
                       _change(_draft.copyWith(showTotalPages: true)),
@@ -181,12 +185,12 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
               ],
             ),
             const SizedBox(height: 12),
-            const Text('글꼴'),
+            const Text(AppStrings.font),
             Align(
               alignment: Alignment.centerLeft,
               child: ChoiceChip(
                 key: const Key('font-option-system'),
-                label: const Text('시스템 기본 글꼴'),
+                label: const Text(AppStrings.systemFont),
                 selected: _draft.fontFileName == null,
                 onSelected: (_) => _change(_draft.copyWith(fontFileName: null)),
               ),
@@ -196,11 +200,11 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
             OutlinedButton.icon(
               onPressed: widget.fontLibrary == null ? null : _importFont,
               icon: const Icon(Icons.add),
-              label: const Text('로컬 글꼴 가져오기'),
+              label: const Text(AppStrings.importLocalFont),
             ),
             _SettingStepper(
               settingKey: 'font-size',
-              label: '글자 크기',
+              label: AppStrings.fontSize,
               value: _draft.fontSize,
               min: 14,
               max: 36,
@@ -210,7 +214,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
             ),
             _SettingStepper(
               settingKey: 'line-height',
-              label: '줄 간격',
+              label: AppStrings.lineHeight,
               value: _draft.lineHeight,
               min: 1.2,
               max: 2.2,
@@ -220,7 +224,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
             ),
             _SettingStepper(
               settingKey: 'horizontal-padding',
-              label: '좌우 여백',
+              label: AppStrings.horizontalPadding,
               value: _draft.horizontalPadding,
               min: 8,
               max: 40,
@@ -230,27 +234,27 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                   _change(_draft.copyWith(horizontalPadding: value)),
             ),
             const SizedBox(height: 8),
-            const Text('문단 들여쓰기'),
+            const Text(AppStrings.paragraphIndent),
             Wrap(
               spacing: 8,
               children: [
                 ChoiceChip(
                   key: const Key('paragraph-indent-none'),
-                  label: const Text('없음'),
+                  label: const Text(AppStrings.none),
                   selected: _draft.paragraphIndent == 0,
                   onSelected: (_) =>
                       _change(_draft.copyWith(paragraphIndent: 0)),
                 ),
                 ChoiceChip(
                   key: const Key('paragraph-indent-one'),
-                  label: const Text('한 글자'),
+                  label: const Text(AppStrings.oneCharacter),
                   selected: _draft.paragraphIndent == 1,
                   onSelected: (_) =>
                       _change(_draft.copyWith(paragraphIndent: 1)),
                 ),
                 ChoiceChip(
                   key: const Key('paragraph-indent-two'),
-                  label: const Text('두 글자'),
+                  label: const Text(AppStrings.twoCharacters),
                   selected: _draft.paragraphIndent == 2,
                   onSelected: (_) =>
                       _change(_draft.copyWith(paragraphIndent: 2)),
@@ -258,7 +262,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
               ],
             ),
             const SizedBox(height: 8),
-            const Text('색상 템플릿'),
+            const Text(AppStrings.colorTemplates),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -283,7 +287,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          '가',
+                          AppStrings.previewCharacter,
                           style: TextStyle(
                             color: Color(template.foreground.value),
                           ),
@@ -307,7 +311,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
               padding: const EdgeInsets.all(16),
               color: Color(_draft.background.value),
               child: Text(
-                '한글 미리보기 가나다라',
+                AppStrings.fontPreview,
                 key: const Key('font-preview'),
                 style: TextStyle(
                   color: Color(_draft.foreground.value),
@@ -316,10 +320,10 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                 ),
               ),
             ),
-            Text('명암비 ${ratio.toStringAsFixed(2)}:1'),
+            Text(AppStrings.contrastRatio(ratio.toStringAsFixed(2))),
             if (ratio < 4.5) ...[
               const Text(
-                '명암비가 낮아 읽기 어려울 수 있습니다.',
+                AppStrings.lowContrastWarning,
                 style: TextStyle(color: Colors.red),
               ),
               TextButton(
@@ -330,12 +334,12 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                     foreground: const RgbColor(32, 48, 32),
                   ),
                 ),
-                child: const Text('기본 색상으로 복구'),
+                child: const Text(AppStrings.resetDefaultColors),
               ),
             ],
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('읽는 동안 화면 켜짐 유지'),
+              title: const Text(AppStrings.keepScreenAwake),
               value: _draft.keepAwake,
               onChanged: (value) => _change(_draft.copyWith(keepAwake: value)),
             ),
@@ -362,7 +366,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
                     _change(_draft.copyWith(fontFileName: font.fileName));
                   }
                 } catch (_) {
-                  widget.onMessage('글꼴을 불러오지 못했습니다.');
+                  widget.onMessage(AppStrings.fontLoadFailed);
                 }
               },
             ),
@@ -370,7 +374,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
         ),
         IconButton(
           key: Key('delete-font-${font.fileName}'),
-          tooltip: '${font.label} 삭제',
+          tooltip: AppStrings.fontDeleteTooltip(font.label),
           icon: const Icon(Icons.delete_outline),
           onPressed: () => _deleteFont(font),
         ),
@@ -383,7 +387,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     try {
       path = await widget.pickFont();
     } catch (_) {
-      widget.onMessage('글꼴을 가져오지 못했습니다.');
+      widget.onMessage(AppStrings.fontImportFailed);
       return;
     }
     if (path == null) return;
@@ -400,7 +404,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     } on FormatException catch (error) {
       widget.onMessage(error.message.toString());
     } catch (_) {
-      widget.onMessage('글꼴을 가져오지 못했습니다.');
+      widget.onMessage(AppStrings.fontImportFailed);
     }
   }
 
@@ -408,19 +412,21 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('글꼴 삭제'),
+        title: const Text(AppStrings.fontDeleteTitle),
         content: Text(
-          '${font.label} 글꼴의 앱 내부 복사본을 삭제할까요?'
-          '${widget.fontLibrary!.isLoaded(font.fileName) ? '\n\n이미 불러온 글꼴 데이터는 앱을 다시 시작할 때까지 메모리에 남을 수 있습니다.' : ''}',
+          AppStrings.fontDeletePrompt(font.label) +
+              (widget.fontLibrary!.isLoaded(font.fileName)
+                  ? '\n\n${AppStrings.fontLoadedUntilRestart}'
+                  : ''),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('취소'),
+            child: const Text(AppStrings.cancel),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('삭제'),
+            child: const Text(AppStrings.delete),
           ),
         ],
       ),
@@ -431,7 +437,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
     try {
       await widget.fontLibrary!.deleteFont(font);
     } catch (_) {
-      widget.onMessage('글꼴을 삭제하지 못했습니다.');
+      widget.onMessage(AppStrings.fontDeleteFailed);
       return;
     }
     final latestSettings = widget.store.data.settings;
@@ -445,7 +451,7 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
       try {
         await widget.onSave();
       } catch (_) {
-        widget.onMessage('글꼴은 삭제했지만 설정을 저장하지 못했습니다.');
+        widget.onMessage(AppStrings.fontDeletedSaveFailed);
       }
     }
     if (!mounted) return;
@@ -486,7 +492,7 @@ class _SettingStepper extends StatelessWidget {
         Expanded(child: Text(label)),
         IconButton(
           key: Key('$settingKey-decrease'),
-          tooltip: '$label 줄이기',
+          tooltip: AppStrings.settingDecrease(label),
           visualDensity: VisualDensity.compact,
           onPressed: value <= min ? null : () => onChanged(_next(-step)),
           icon: const Icon(Icons.remove),
@@ -500,7 +506,7 @@ class _SettingStepper extends StatelessWidget {
         ),
         IconButton(
           key: Key('$settingKey-increase'),
-          tooltip: '$label 늘리기',
+          tooltip: AppStrings.settingIncrease(label),
           visualDensity: VisualDensity.compact,
           onPressed: value >= max ? null : () => onChanged(_next(step)),
           icon: const Icon(Icons.add),
@@ -592,10 +598,10 @@ class _RgbEditorState extends State<_RgbEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('배경색 RGB'),
+        const Text(AppStrings.backgroundRgb),
         _row(0, 'background'),
         const SizedBox(height: 8),
-        const Text('글자색 RGB'),
+        const Text(AppStrings.foregroundRgb),
         _row(3, 'foreground'),
       ],
     );
@@ -643,10 +649,26 @@ class _ColorTemplate {
 }
 
 const _colorTemplates = [
-  _ColorTemplate('기본 연두', RgbColor(196, 236, 187), RgbColor(32, 48, 32)),
-  _ColorTemplate('종이', RgbColor(255, 253, 248), RgbColor(32, 32, 32)),
-  _ColorTemplate('밤', RgbColor(18, 18, 18), RgbColor(232, 232, 232)),
-  _ColorTemplate('세피아', RgbColor(244, 236, 216), RgbColor(59, 49, 38)),
+  _ColorTemplate(
+    AppStrings.defaultGreen,
+    RgbColor(196, 236, 187),
+    RgbColor(32, 48, 32),
+  ),
+  _ColorTemplate(
+    AppStrings.paper,
+    RgbColor(255, 253, 248),
+    RgbColor(32, 32, 32),
+  ),
+  _ColorTemplate(
+    AppStrings.night,
+    RgbColor(18, 18, 18),
+    RgbColor(232, 232, 232),
+  ),
+  _ColorTemplate(
+    AppStrings.sepia,
+    RgbColor(244, 236, 216),
+    RgbColor(59, 49, 38),
+  ),
 ];
 
 double contrastRatio(RgbColor first, RgbColor second) {

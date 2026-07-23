@@ -7,7 +7,8 @@
 ## 구조
 
 - `ReaderScreen`은 파일 로딩과 오류 화면 전환만 담당한다.
-- `ReaderController`는 문서, 읽기 설정, 위치, 검색, 자동 넘김, 페이지 계산, 저장 예약을 소유한다.
+- `ReaderController`는 읽기 설정, 위치, 검색, 자동 넘김과 저장 예약을 소유한다.
+- `ReaderPaginationCoordinator`는 화면 크기에 종속된 페이지 계산, 캐시, 먼 페이지 이동과 계산 세대를 소유한다.
 - `ReaderView`는 컨트롤러를 구독해 화면을 그리며 입력을 명령으로 전달한다.
 - 설정 패널은 별도 `ReaderSettingsSheet` 위젯으로 분리한다.
 - 기존 `AppStore`, 텍스트 디코더, 페이지 캐시는 작은 서비스로 유지하고 불필요한 저장소 추상화는 만들지 않는다.

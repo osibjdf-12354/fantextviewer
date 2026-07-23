@@ -8,6 +8,7 @@ import 'file_browser.dart';
 import 'font_library.dart';
 import 'models.dart';
 import 'reader_screen.dart';
+import 'strings.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +33,10 @@ Future<void> restoreSelectedFont(
   store.updateSettings(store.data.settings.copyWith(fontFileName: null));
   try {
     await store.save();
-  } catch (_) {}
+  } catch (error, stackTrace) {
+    debugPrint('Failed to persist the recovered font setting: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
 }
 
 class GeulbomApp extends StatelessWidget {
@@ -44,7 +48,7 @@ class GeulbomApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '판갤텍뷰',
+      title: AppStrings.appName,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
@@ -74,16 +78,16 @@ class _HomeScreenState extends State<HomeScreen> {
       final remove = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('파일을 찾을 수 없습니다'),
-          content: const Text('파일이 이동되거나 삭제되었습니다. 최근 목록에서 지울까요?'),
+          title: const Text(AppStrings.missingFileTitle),
+          content: const Text(AppStrings.missingFileBody),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('유지'),
+              child: const Text(AppStrings.keep),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('목록에서 삭제'),
+              child: const Text(AppStrings.removeFromList),
             ),
           ],
         ),
@@ -127,10 +131,10 @@ class _HomeScreenState extends State<HomeScreen> {
         final recent = widget.store.recentDocuments;
         return Scaffold(
           appBar: AppBar(
-            title: const Text('판갤텍뷰'),
+            title: const Text(AppStrings.appName),
             actions: [
               IconButton(
-                tooltip: '시스템 파일 선택기',
+                tooltip: AppStrings.systemFilePicker,
                 onPressed: _openSystemPicker,
                 icon: const Icon(Icons.file_open),
               ),
@@ -144,7 +148,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                       child: Text(
-                        '최근 파일',
+                        AppStrings.recentFiles,
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
@@ -162,7 +166,7 @@ class _HomeScreenState extends State<HomeScreen> {
           floatingActionButton: FloatingActionButton.extended(
             onPressed: _openBrowser,
             icon: const Icon(Icons.folder_open),
-            label: const Text('파일 탐색'),
+            label: const Text(AppStrings.browseFiles),
           ),
         );
       },
@@ -183,9 +187,9 @@ class _EmptyHome extends StatelessWidget {
           children: [
             Icon(Icons.menu_book_outlined, size: 64),
             SizedBox(height: 16),
-            Text('최근에 읽은 파일이 없습니다.'),
+            Text(AppStrings.noRecentFiles),
             SizedBox(height: 8),
-            Text('파일 탐색 버튼으로 TXT 파일을 열어 보세요.'),
+            Text(AppStrings.browseFilesHint),
           ],
         ),
       ),
@@ -216,7 +220,7 @@ class _RecentTile extends StatelessWidget {
       ),
       onTap: onTap,
       trailing: IconButton(
-        tooltip: '최근 목록에서 삭제',
+        tooltip: AppStrings.removeRecent,
         onPressed: onRemove,
         icon: const Icon(Icons.close),
       ),

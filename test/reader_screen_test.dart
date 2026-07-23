@@ -11,6 +11,7 @@ import 'package:geulbom/font_library.dart';
 import 'package:geulbom/models.dart';
 import 'package:geulbom/page_index_cache.dart';
 import 'package:geulbom/page_turn_view.dart';
+import 'package:geulbom/reader_controller.dart';
 import 'package:geulbom/reader_screen.dart';
 import 'package:geulbom/text_document.dart';
 import 'package:geulbom/text_paginator.dart';
@@ -19,6 +20,41 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
 
 void main() {
+  testWidgets('구독 중인 컨트롤러 변경을 읽기 화면에 반영한다', (tester) async {
+    final store = _MemoryStore();
+    final controller = ReaderController(
+      store: store,
+      path: '/book.txt',
+      textLength: 2,
+      text: '본문',
+    );
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: '본문',
+          encoding: TextEncoding.utf8,
+          store: store,
+          controller: controller,
+        ),
+      ),
+    );
+
+    controller.applySettings(
+      controller.settings.copyWith(background: const RgbColor(10, 20, 30)),
+    );
+    await controller.flush();
+    await tester.pump();
+
+    expect(
+      tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+      const Color.fromRGBO(10, 20, 30, 1),
+    );
+  });
+
   testWidgets('페이지 계산과 본문은 같은 시스템 글자 배율을 사용한다', (tester) async {
     const text = '본문';
     TextStyle? measuredStyle;

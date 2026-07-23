@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 
+import 'strings.dart';
+
 enum BrowserSort { name, modified }
 
 typedef DirectoryPicker = Future<String?> Function({String? initialDirectory});
@@ -74,7 +76,7 @@ Future<List<BrowserEntry>> listTextEntries(
 
 Future<String?> pickTextFile() async {
   const textFiles = XTypeGroup(
-    label: '텍스트 파일',
+    label: AppStrings.textFile,
     extensions: ['txt'],
     mimeTypes: ['text/plain'],
   );
@@ -202,28 +204,34 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
               .toList();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('파일 탐색기'),
+        title: const Text(AppStrings.fileBrowser),
         actions: [
           IconButton(
-            tooltip: '폴더 선택',
+            tooltip: AppStrings.chooseFolder,
             onPressed: _chooseDirectory,
             icon: const Icon(Icons.create_new_folder_outlined),
           ),
           IconButton(
-            tooltip: '시스템 파일 선택기',
+            tooltip: AppStrings.systemFilePicker,
             onPressed: _openPicker,
             icon: const Icon(Icons.file_open),
           ),
           PopupMenuButton<BrowserSort>(
-            tooltip: '정렬',
+            tooltip: AppStrings.sort,
             initialValue: _sort,
             onSelected: (sort) {
               _sort = sort;
               _load();
             },
             itemBuilder: (context) => const [
-              PopupMenuItem(value: BrowserSort.name, child: Text('이름순')),
-              PopupMenuItem(value: BrowserSort.modified, child: Text('수정일순')),
+              PopupMenuItem(
+                value: BrowserSort.name,
+                child: Text(AppStrings.sortByName),
+              ),
+              PopupMenuItem(
+                value: BrowserSort.modified,
+                child: Text(AppStrings.sortByModified),
+              ),
             ],
           ),
         ],
@@ -235,7 +243,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                 ListTile(
                   dense: true,
                   leading: IconButton(
-                    tooltip: '상위 폴더',
+                    tooltip: AppStrings.parentFolder,
                     onPressed: _directory?.path == _rootDirectory?.path
                         ? null
                         : _goUp,
@@ -253,7 +261,7 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                     controller: _searchController,
                     onChanged: (_) => setState(() {}),
                     decoration: const InputDecoration(
-                      hintText: '파일명 검색',
+                      hintText: AppStrings.searchFileName,
                       prefixIcon: Icon(Icons.search),
                       border: OutlineInputBorder(),
                     ),
@@ -264,14 +272,14 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
                   child: _error != null
                       ? _Message(
                           icon: Icons.error_outline,
-                          text: '폴더를 읽지 못했습니다.\n$_error',
-                          actionLabel: '다시 시도',
+                          text: AppStrings.folderReadFailed(_error!),
+                          actionLabel: AppStrings.retry,
                           onAction: _load,
                         )
                       : visible.isEmpty && !_loading
                       ? const _Message(
                           icon: Icons.folder_off_outlined,
-                          text: '표시할 폴더나 TXT 파일이 없습니다.',
+                          text: AppStrings.folderEmpty,
                         )
                       : ListView.builder(
                           itemCount: visible.length,
@@ -303,11 +311,11 @@ class _FileBrowserScreenState extends State<FileBrowserScreen> {
     return _Message(
       icon: Icons.folder_open_outlined,
       text: _error == null
-          ? 'TXT 파일이 있는 폴더를 선택하거나\n파일 하나를 바로 여세요.'
-          : '폴더를 열지 못했습니다.\n$_error',
-      actionLabel: '폴더 선택',
+          ? AppStrings.chooseFolderOrFile
+          : AppStrings.folderOpenFailed(_error!),
+      actionLabel: AppStrings.chooseFolder,
       onAction: _chooseDirectory,
-      secondaryLabel: '파일 하나 선택',
+      secondaryLabel: AppStrings.chooseOneFile,
       onSecondary: _openPicker,
     );
   }

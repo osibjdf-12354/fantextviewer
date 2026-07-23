@@ -139,4 +139,52 @@ void main() {
     expect(activityNotifications, 2);
     expect(controller.paginationActivity.value.progress, .5);
   });
+
+  testWidgets('owns automatic page timing, pauses, and lifecycle state', (
+    tester,
+  ) async {
+    final controller = ReaderController(
+      store: AppStore(File('unused')),
+      path: '/book.txt',
+      textLength: 10,
+    );
+    addTearDown(controller.dispose);
+    var advances = 0;
+
+    expect(controller.autoMode, isFalse);
+    expect(controller.canAutoAdvance, isFalse);
+
+    controller.setAutoMode(true);
+    controller.scheduleAutoAdvance(
+      const Duration(seconds: 2),
+      () => advances++,
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(advances, 0);
+    await tester.pump(const Duration(seconds: 1));
+    expect(advances, 1);
+
+    controller.pauseAuto();
+    controller.scheduleAutoAdvance(
+      const Duration(seconds: 1),
+      () => advances++,
+    );
+    await tester.pump(const Duration(seconds: 1));
+    expect(controller.canAutoAdvance, isFalse);
+    expect(advances, 1);
+
+    controller.resumeAuto();
+    controller.setAppActive(false);
+    expect(controller.canAutoAdvance, isFalse);
+    controller.setAppActive(true);
+    expect(controller.canAutoAdvance, isTrue);
+
+    controller.scheduleAutoAdvance(
+      const Duration(seconds: 1),
+      () => advances++,
+    );
+    controller.setAutoMode(false);
+    await tester.pump(const Duration(seconds: 1));
+    expect(advances, 1);
+  });
 }

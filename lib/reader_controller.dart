@@ -47,9 +47,13 @@ class ReaderController extends ChangeNotifier {
   late int _offset;
   late double _scrollAlignment;
   Timer? _saveTimer;
+  Timer? _autoTimer;
   Object? _lastSaveError;
   String _searchQuery = '';
   ReaderSearchMatch? _activeSearchMatch;
+  bool _autoMode = false;
+  int _autoPauseDepth = 0;
+  bool _appActive = true;
 
   ReaderSettings get settings => _settings;
   int get offset => _offset;
@@ -57,6 +61,45 @@ class ReaderController extends ChangeNotifier {
   Object? get lastSaveError => _lastSaveError;
   String get searchQuery => _searchQuery;
   ReaderSearchMatch? get activeSearchMatch => _activeSearchMatch;
+  bool get autoMode => _autoMode;
+  bool get appActive => _appActive;
+  bool get canAutoAdvance => _autoMode && _autoPauseDepth == 0 && _appActive;
+
+  void setAutoMode(bool value) {
+    if (_autoMode == value) return;
+    _autoMode = value;
+    if (!value) cancelAutoAdvance();
+    notifyListeners();
+  }
+
+  void pauseAuto() {
+    _autoPauseDepth++;
+    cancelAutoAdvance();
+  }
+
+  void resumeAuto() {
+    if (_autoPauseDepth > 0) _autoPauseDepth--;
+  }
+
+  void setAppActive(bool value) {
+    if (_appActive == value) return;
+    _appActive = value;
+    if (!value) cancelAutoAdvance();
+  }
+
+  void scheduleAutoAdvance(Duration delay, FutureOr<void> Function() advance) {
+    cancelAutoAdvance();
+    if (!canAutoAdvance) return;
+    _autoTimer = Timer(delay, () async {
+      _autoTimer = null;
+      if (canAutoAdvance) await advance();
+    });
+  }
+
+  void cancelAutoAdvance() {
+    _autoTimer?.cancel();
+    _autoTimer = null;
+  }
 
   ReaderSearchMatch? startSearch(String query) {
     _searchQuery = query;
@@ -183,6 +226,7 @@ class ReaderController extends ChangeNotifier {
   @override
   void dispose() {
     _saveTimer?.cancel();
+    _autoTimer?.cancel();
     paginationActivity.dispose();
     super.dispose();
   }
