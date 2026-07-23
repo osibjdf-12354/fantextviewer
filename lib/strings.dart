@@ -59,6 +59,7 @@ abstract final class AppStrings {
   static const fileInfo = '파일 정보';
   static const exitApp = '앱 종료';
   static const calculatingPages = '페이지를 계산하고 있습니다.';
+  static const paginationFailed = '페이지 계산에 실패했습니다.';
   static const previousSearchResult = '이전 검색 결과';
   static const nextSearchResult = '다음 검색 결과';
   static const endSearch = '검색 종료';

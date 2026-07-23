@@ -234,23 +234,29 @@ class ReaderPaginationCoordinator {
       if (!_isCurrent(generation)) return;
     }
     final progressivePages = <TextPage>[];
-    final calculatedPages = await paginator(
-      text: text,
-      size: size,
-      style: style,
-      paragraphIndent: currentSettings.paragraphIndent,
-      onProgress: (progress) {
-        if (_isCurrent(generation)) {
-          readerController.updatePaginationProgress(progress);
-        }
-      },
-      onBatch: (batch) {
-        if (!_isCurrent(generation) || batch.isEmpty) return;
-        progressivePages.addAll(batch);
-        _setPaginationPages(progressivePages, complete: false);
-      },
-      isCancelled: () => !_isCurrent(generation),
-    );
+    late final List<TextPage> calculatedPages;
+    try {
+      calculatedPages = await paginator(
+        text: text,
+        size: size,
+        style: style,
+        paragraphIndent: currentSettings.paragraphIndent,
+        onProgress: (progress) {
+          if (_isCurrent(generation)) {
+            readerController.updatePaginationProgress(progress);
+          }
+        },
+        onBatch: (batch) {
+          if (!_isCurrent(generation) || batch.isEmpty) return;
+          progressivePages.addAll(batch);
+          _setPaginationPages(progressivePages, complete: false);
+        },
+        isCancelled: () => !_isCurrent(generation),
+      );
+    } catch (_) {
+      if (_isCurrent(generation)) rethrow;
+      return;
+    }
     if (!_isCurrent(generation)) return;
     final isComplete =
         calculatedPages.isNotEmpty &&

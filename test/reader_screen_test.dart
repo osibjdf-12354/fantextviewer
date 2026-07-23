@@ -3390,6 +3390,54 @@ void main() {
     expect(find.text('body'), findsOneWidget);
     expect(find.text(AppStrings.saveReadingPositionFailed), findsOneWidget);
   });
+  testWidgets('pagination failure shows a retry action that can recover', (
+    tester,
+  ) async {
+    _mockWakelock(tester);
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
+    var calls = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView.test(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: 'abcdef',
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                required paragraphIndent,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async {
+                calls++;
+                if (calls == 1) throw StateError('pagination failed');
+                return [TextPage(start: 0, end: text.length)];
+              },
+        ),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text(AppStrings.paginationFailed).evaluate().isNotEmpty,
+    );
+
+    expect(find.byKey(const Key('pagination-retry')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('pagination-retry')));
+    await _pumpUntil(
+      tester,
+      () => calls == 2 && find.byType(PageTurnView).evaluate().isNotEmpty,
+    );
+
+    expect(find.text(AppStrings.paginationFailed), findsNothing);
+  });
 }
 
 void _mockWakelock(WidgetTester tester) {

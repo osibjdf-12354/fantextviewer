@@ -328,6 +328,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   bool _scrollPositionsReady = false;
   bool _scrollPositionChanged = false;
   bool _restoringExactScrollPosition = false;
+  Object? _paginationError;
   Timer? _scrollSaveTimer;
 
   ReaderSettings get _settings => _controller.settings;
@@ -514,14 +515,9 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                               if (_activeMode == ReadingMode.scroll) {
                                 _ensureScrollChunks(pageSize);
                               }
-                              await _pagination.ensurePages(
-                                size: pageSize,
-                                style: _textStyle,
-                                fontFileName: _settings.fontFileName,
-                                fontFileVersion: widget.fontLibrary?.versionFor(
-                                  _settings.fontFileName,
-                                ),
-                              );
+                              if (_paginationError == null) {
+                                await _ensurePagination(pageSize);
+                              }
                             });
                             return mode == ReadingMode.scroll
                                 ? _buildScrollReader()
@@ -731,6 +727,36 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   }
 
   Widget _buildPageReader() {
+    final paginationError = _paginationError;
+    if (paginationError != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48),
+              const SizedBox(height: 12),
+              const Text(AppStrings.paginationFailed),
+              const SizedBox(height: 8),
+              Text(
+                '$paginationError',
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                key: const Key('pagination-retry'),
+                onPressed: _retryPagination,
+                icon: const Icon(Icons.refresh),
+                label: const Text(AppStrings.retry),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     final window = _pagination.pageWindow;
     final pages = window?.pages ?? _pagination.pages;
     final pageIndex = _pagination.pageIndex;
@@ -792,6 +818,25 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         );
       },
     );
+  }
+
+  Future<void> _ensurePagination(Size pageSize) async {
+    try {
+      await _pagination.ensurePages(
+        size: pageSize,
+        style: _textStyle,
+        fontFileName: _settings.fontFileName,
+        fontFileVersion: widget.fontLibrary?.versionFor(_settings.fontFileName),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Page calculation failed: $error\n$stackTrace');
+      if (mounted) setState(() => _paginationError = error);
+    }
+  }
+
+  void _retryPagination() {
+    _pagination.resetForSettings();
+    setState(() => _paginationError = null);
   }
 
   Widget _buildReaderText(IndentedText formatted) {
@@ -1327,6 +1372,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       _pendingScrollChunkLayoutKey = null;
     });
     _pagination.resetForSettings();
+    _paginationError = null;
     _controller.applySettings(settings);
     _syncWakelock();
   }

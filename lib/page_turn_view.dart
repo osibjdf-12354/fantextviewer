@@ -69,7 +69,6 @@ class PageTurnViewState extends State<PageTurnView>
   void didUpdateWidget(PageTurnView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.index != widget.index ||
-        oldWidget.itemCount != widget.itemCount ||
         oldWidget.direction != widget.direction ||
         oldWidget.tapOnly != widget.tapOnly ||
         oldWidget.animationEnabled != widget.animationEnabled) {

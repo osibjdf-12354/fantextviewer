@@ -214,6 +214,54 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('growing page batches do not cancel an active swipe', (
+    tester,
+  ) async {
+    final page = ValueNotifier(1);
+    final itemCount = ValueNotifier(3);
+    addTearDown(page.dispose);
+    addTearDown(itemCount.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<int>(
+          valueListenable: itemCount,
+          builder: (context, count, _) => ValueListenableBuilder<int>(
+            valueListenable: page,
+            builder: (context, index, _) => PageTurnView(
+              index: index,
+              itemCount: count,
+              direction: PageTurnDirection.horizontal,
+              onPageChanged: (value) => page.value = value,
+              itemBuilder: (_, itemIndex) => Text(
+                'page $itemIndex',
+                key: ValueKey('batch-page-$itemIndex'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final pager = find.byType(PageTurnView);
+    final rect = tester.getRect(pager);
+    final gesture = await tester.startGesture(rect.center);
+    await gesture.moveBy(const Offset(-200, 0));
+    await tester.pump();
+    final draggedLeft = tester
+        .getTopLeft(find.byKey(const ValueKey('batch-page-1')))
+        .dx;
+
+    itemCount.value = 4;
+    await tester.pump();
+
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('batch-page-1'))).dx,
+      closeTo(draggedLeft, 1),
+    );
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(page.value, 2);
+  });
+
   testWidgets('long press leaves the page unchanged for text selection', (
     tester,
   ) async {
