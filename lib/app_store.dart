@@ -18,20 +18,21 @@ class AppStore extends ChangeNotifier {
   File? recoveryFile;
 
   Future<void> load() async {
-    if (!await file.exists()) return;
-    try {
-      final json =
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      _data = AppData.fromJson(json);
-      lastLoadError = null;
-      lastLoadStackTrace = null;
-      recoveryFile = null;
-    } catch (error, stackTrace) {
-      lastLoadError = error;
-      lastLoadStackTrace = stackTrace;
-      recoveryFile = await file.rename(await _nextBrokenPath());
-      _data = AppData();
+    if (await file.exists()) {
+      try {
+        final json =
+            jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+        _data = AppData.fromJson(json);
+        lastLoadError = null;
+        lastLoadStackTrace = null;
+      } catch (error, stackTrace) {
+        lastLoadError = error;
+        lastLoadStackTrace = stackTrace;
+        recoveryFile = await file.rename(await _nextBrokenPath());
+        _data = AppData();
+      }
     }
+    recoveryFile ??= await _latestRecoveryFile();
     notifyListeners();
   }
 
@@ -49,8 +50,20 @@ class AppStore extends ChangeNotifier {
     }
     lastLoadError = null;
     lastLoadStackTrace = null;
-    recoveryFile = null;
+    await completeRecovery();
     notifyListeners();
+  }
+
+  Future<void> completeRecovery() async {
+    final recovery = recoveryFile;
+    if (recovery != null && await recovery.exists()) {
+      try {
+        await recovery.delete();
+      } on FileSystemException {
+        return;
+      }
+    }
+    recoveryFile = null;
   }
 
   Future<String> _nextBrokenPath() async {
@@ -61,6 +74,19 @@ class AppStore extends ChangeNotifier {
       path = '${file.path}.broken.$stamp.${suffix++}';
     }
     return path;
+  }
+
+  Future<File?> _latestRecoveryFile() async {
+    if (!await file.parent.exists()) return null;
+    final prefix = '${file.path}.broken.';
+    final candidates = await file.parent
+        .list()
+        .where((entry) => entry is File && entry.path.startsWith(prefix))
+        .cast<File>()
+        .toList();
+    if (candidates.isEmpty) return null;
+    candidates.sort((a, b) => b.path.compareTo(a.path));
+    return candidates.first;
   }
 
   Future<void> save() {
@@ -124,12 +150,19 @@ class AppStore extends ChangeNotifier {
     String path, {
     required int fileSize,
     required DateTime modified,
+    String? contentFingerprint,
   }) {
     final state = document(path);
     final modifiedUtc = modified.toUtc().toIso8601String();
-    final changed =
-        (state.fileSize != null && state.fileSize != fileSize) ||
-        (state.modified != null && state.modified != modifiedUtc);
+    final changed = contentFingerprint == null
+        ? (state.fileSize != null && state.fileSize != fileSize) ||
+              (state.modified != null && state.modified != modifiedUtc)
+        : fileChanged(
+            path,
+            fileSize: fileSize,
+            modified: modified,
+            contentFingerprint: contentFingerprint,
+          );
     _putDocument(
       state.copyWith(
         offset: changed ? 0 : state.offset,
@@ -138,9 +171,25 @@ class AppStore extends ChangeNotifier {
         bookmarks: changed ? const [] : state.bookmarks,
         fileSize: fileSize,
         modified: modifiedUtc,
+        contentFingerprint: contentFingerprint ?? state.contentFingerprint,
       ),
     );
     return changed;
+  }
+
+  bool fileChanged(
+    String path, {
+    required int fileSize,
+    required DateTime modified,
+    required String contentFingerprint,
+  }) {
+    final state = document(path);
+    if (state.contentFingerprint != null) {
+      return state.contentFingerprint != contentFingerprint;
+    }
+    final modifiedUtc = modified.toUtc().toIso8601String();
+    return (state.fileSize != null && state.fileSize != fileSize) ||
+        (state.modified != null && state.modified != modifiedUtc);
   }
 
   void updateProgress(
@@ -187,6 +236,17 @@ class AppStore extends ChangeNotifier {
     if (!_data.documents.containsKey(path)) return;
     final documents = Map<String, DocumentState>.of(_data.documents)
       ..remove(path);
+    _data = _data.copyWith(documents: documents);
+    notifyListeners();
+  }
+
+  void moveDocument(String oldPath, String newPath) {
+    if (oldPath == newPath) return;
+    final state = _data.documents[oldPath];
+    if (state == null) return;
+    final documents = Map<String, DocumentState>.of(_data.documents)
+      ..remove(oldPath)
+      ..[newPath] = state.copyWith(path: newPath);
     _data = _data.copyWith(documents: documents);
     notifyListeners();
   }

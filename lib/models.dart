@@ -302,6 +302,7 @@ class DocumentState {
     this.lastOpened = '',
     this.fileSize,
     this.modified,
+    this.contentFingerprint,
     List<Bookmark>? bookmarks,
   }) : bookmarks = List.unmodifiable(bookmarks ?? const []);
 
@@ -312,19 +313,22 @@ class DocumentState {
   final String lastOpened;
   final int? fileSize;
   final String? modified;
+  final String? contentFingerprint;
   final List<Bookmark> bookmarks;
 
   DocumentState copyWith({
+    String? path,
     int? offset,
     double? scrollAlignment,
     Object? encoding = _unchanged,
     String? lastOpened,
     Object? fileSize = _unchanged,
     Object? modified = _unchanged,
+    Object? contentFingerprint = _unchanged,
     List<Bookmark>? bookmarks,
   }) {
     return DocumentState(
-      path: path,
+      path: path ?? this.path,
       offset: offset ?? this.offset,
       scrollAlignment: scrollAlignment ?? this.scrollAlignment,
       encoding: identical(encoding, _unchanged)
@@ -337,6 +341,9 @@ class DocumentState {
       modified: identical(modified, _unchanged)
           ? this.modified
           : modified as String?,
+      contentFingerprint: identical(contentFingerprint, _unchanged)
+          ? this.contentFingerprint
+          : contentFingerprint as String?,
       bookmarks: bookmarks ?? this.bookmarks,
     );
   }
@@ -349,6 +356,7 @@ class DocumentState {
     'lastOpened': lastOpened,
     'fileSize': fileSize,
     'modified': modified,
+    'contentFingerprint': contentFingerprint,
     'bookmarks': bookmarks.map((bookmark) => bookmark.toJson()).toList(),
   };
 
@@ -377,6 +385,9 @@ class DocumentState {
           ? rawFileSize.toInt()
           : null,
       modified: json['modified'] is String ? json['modified'] as String : null,
+      contentFingerprint: json['contentFingerprint'] is String
+          ? json['contentFingerprint'] as String
+          : null,
       bookmarks: bookmarks,
     );
   }
@@ -390,7 +401,7 @@ class AppData {
   final ReaderSettings settings;
   final Map<String, DocumentState> documents;
 
-  static const currentSchemaVersion = 2;
+  static const currentSchemaVersion = 3;
 
   AppData copyWith({
     ReaderSettings? settings,

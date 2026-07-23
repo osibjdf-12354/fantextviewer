@@ -362,6 +362,112 @@ void main() {
     expect(state.modified, '2026-01-02T00:00:00.000Z');
   });
 
+  test('content fingerprint detects changes when file metadata matches', () {
+    final modified = DateTime.utc(2026, 1, 2);
+    final store = AppStore(File('unused'));
+    store.touchRecent(
+      '/book.txt',
+      fileSize: 100,
+      modified: modified,
+      openedAt: DateTime.utc(2026, 1, 1),
+    );
+    store.setEncoding('/book.txt', 'cp949');
+    store.updateProgress(
+      '/book.txt',
+      offset: 42,
+      scrollAlignment: .25,
+      documentLength: 100,
+    );
+    store.addBookmark(
+      '/book.txt',
+      const Bookmark(offset: 20, excerpt: 'saved', createdAt: 'now'),
+    );
+
+    expect(
+      store.updateFileFingerprint(
+        '/book.txt',
+        fileSize: 100,
+        modified: modified,
+        contentFingerprint: 'sha256:first',
+      ),
+      isFalse,
+    );
+    expect(
+      store.fileChanged(
+        '/book.txt',
+        fileSize: 100,
+        modified: modified,
+        contentFingerprint: 'sha256:first',
+      ),
+      isFalse,
+    );
+    expect(
+      store.fileChanged(
+        '/book.txt',
+        fileSize: 100,
+        modified: modified,
+        contentFingerprint: 'sha256:second',
+      ),
+      isTrue,
+    );
+
+    expect(
+      store.updateFileFingerprint(
+        '/book.txt',
+        fileSize: 100,
+        modified: modified,
+        contentFingerprint: 'sha256:second',
+      ),
+      isTrue,
+    );
+    final state = store.document('/book.txt');
+    expect(state.offset, 0);
+    expect(state.scrollAlignment, 0);
+    expect(state.encoding, isNull);
+    expect(state.bookmarks, isEmpty);
+    expect(state.contentFingerprint, 'sha256:second');
+  });
+
+  test('moves saved document state to a durable imported path', () {
+    final modified = DateTime.utc(2026, 1, 2);
+    final store = AppStore(File('unused'));
+    store.touchRecent(
+      '/cache/novel.txt',
+      fileSize: 100,
+      modified: modified,
+      openedAt: DateTime.utc(2026, 1, 1),
+    );
+    store.setEncoding('/cache/novel.txt', 'cp949');
+    store.updateProgress(
+      '/cache/novel.txt',
+      offset: 42,
+      scrollAlignment: .25,
+      documentLength: 100,
+    );
+    store.addBookmark(
+      '/cache/novel.txt',
+      const Bookmark(offset: 20, excerpt: 'saved', createdAt: 'now'),
+    );
+    store.updateFileFingerprint(
+      '/cache/novel.txt',
+      fileSize: 100,
+      modified: modified,
+      contentFingerprint: 'sha256:first',
+    );
+
+    store.moveDocument('/cache/novel.txt', '/files/imported/novel.txt');
+
+    expect(store.data.documents, isNot(contains('/cache/novel.txt')));
+    final moved = store.document('/files/imported/novel.txt');
+    expect(moved.path, '/files/imported/novel.txt');
+    expect(moved.offset, 42);
+    expect(moved.scrollAlignment, .25);
+    expect(moved.encoding, 'cp949');
+    expect(moved.bookmarks.single.excerpt, 'saved');
+    expect(moved.contentFingerprint, 'sha256:first');
+    expect(store.recentDocuments.single.path, '/files/imported/novel.txt');
+  });
+
   test('first fingerprint migration preserves legacy reading progress', () {
     final store = AppStore(File('unused'))
       ..updateProgress('/book.txt', offset: 42, documentLength: 100);
@@ -420,6 +526,55 @@ void main() {
     expect(store.data.settings.fontSize, 24);
     expect(store.document('/book.txt').offset, 7);
     expect(await stateFile.exists(), isTrue);
+  });
+
+  test('successful repair import removes the internal recovery copy', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'geulbom_state_repair',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final stateFile = File(
+      '${directory.path}${Platform.pathSeparator}state.json',
+    );
+    await stateFile.writeAsString('{broken');
+    final store = AppStore(stateFile);
+    await store.load();
+    final broken = store.recoveryFile!;
+    final repaired = File(
+      '${directory.path}${Platform.pathSeparator}repaired.json',
+    );
+    await repaired.writeAsString(
+      '{"schemaVersion":3,"documents":{'
+      '"/book.txt":{"offset":7}}}',
+    );
+
+    await store.importState(repaired);
+
+    expect(store.recoveryFile, isNull);
+    expect(await broken.exists(), isFalse);
+    expect(store.document('/book.txt').offset, 7);
+  });
+
+  test('rediscovers the latest broken state file after restart', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'geulbom_state_restart',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final stateFile = File(
+      '${directory.path}${Platform.pathSeparator}state.json',
+    );
+    await stateFile.writeAsString('{broken');
+
+    final first = AppStore(stateFile);
+    await first.load();
+    final broken = first.recoveryFile!;
+    expect(await broken.exists(), isTrue);
+
+    final restarted = AppStore(stateFile);
+    await restarted.load();
+
+    expect(restarted.lastLoadError, isNull);
+    expect(restarted.recoveryFile?.path, broken.path);
   });
 
   test('invalid state import preserves the current state', () async {
