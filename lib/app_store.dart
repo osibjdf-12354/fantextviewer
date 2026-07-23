@@ -9,34 +9,69 @@ class AppStore extends ChangeNotifier {
   AppStore(this.file);
 
   final File file;
-  AppData data = AppData();
+  AppData _data = AppData();
+  Future<void> _saveTail = Future<void>.value();
+
+  AppData get data => _data;
+  Object? lastLoadError;
+  StackTrace? lastLoadStackTrace;
 
   Future<void> load() async {
     if (!await file.exists()) return;
     try {
       final json =
           jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      data = AppData.fromJson(json);
-    } catch (_) {
-      final broken = File('${file.path}.broken');
-      if (await broken.exists()) await broken.delete();
-      await file.rename(broken.path);
-      data = AppData();
+      _data = AppData.fromJson(json);
+      lastLoadError = null;
+      lastLoadStackTrace = null;
+    } catch (error, stackTrace) {
+      lastLoadError = error;
+      lastLoadStackTrace = stackTrace;
+      await file.rename(await _nextBrokenPath());
+      _data = AppData();
     }
     notifyListeners();
   }
 
-  Future<void> save() async {
+  Future<String> _nextBrokenPath() async {
+    final stamp = DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
+    var path = '${file.path}.broken.$stamp';
+    var suffix = 1;
+    while (await File(path).exists()) {
+      path = '${file.path}.broken.$stamp.${suffix++}';
+    }
+    return path;
+  }
+
+  Future<void> save() {
+    final snapshot = jsonEncode(_data.toJson());
+    final operation = _saveTail.then((_) => _writeSnapshot(snapshot));
+    _saveTail = operation.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return operation;
+  }
+
+  Future<void> _writeSnapshot(String snapshot) async {
     await file.parent.create(recursive: true);
-    await file.writeAsString(jsonEncode(data.toJson()), flush: true);
+    final temporary = File('${file.path}.${identityHashCode(this)}.tmp');
+    try {
+      await temporary.writeAsString(snapshot, flush: true);
+      await temporary.rename(file.path);
+    } finally {
+      if (await temporary.exists()) {
+        await temporary.delete();
+      }
+    }
   }
 
   DocumentState document(String path) {
-    return data.documents.putIfAbsent(path, () => DocumentState(path: path));
+    return _data.documents.putIfAbsent(path, () => DocumentState(path: path));
   }
 
   List<DocumentState> get recentDocuments {
-    final documents = data.documents.values
+    final documents = _data.documents.values
         .where((document) => document.lastOpened.isNotEmpty)
         .toList();
     documents.sort((a, b) => b.lastOpened.compareTo(a.lastOpened));
@@ -44,7 +79,7 @@ class AppStore extends ChangeNotifier {
   }
 
   void updateSettings(ReaderSettings settings) {
-    data.settings = settings;
+    _data.settings = settings;
     notifyListeners();
   }
 
@@ -93,7 +128,7 @@ class AppStore extends ChangeNotifier {
   }
 
   void removeDocument(String path) {
-    data.documents.remove(path);
+    _data.documents.remove(path);
     notifyListeners();
   }
 }

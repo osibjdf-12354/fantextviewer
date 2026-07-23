@@ -2,6 +2,26 @@ enum ReadingMode { scroll, page, tap }
 
 enum PageTurnDirection { horizontal, vertical, both }
 
+const _defaultBackground = RgbColor(196, 236, 187);
+const _defaultForeground = RgbColor(32, 48, 32);
+
+double _boundedDouble(
+  Object? value, {
+  required double fallback,
+  required double min,
+  required double max,
+}) {
+  if (value is! num) return fallback;
+  final number = value.toDouble();
+  if (!number.isFinite) return fallback;
+  return number.clamp(min, max).toDouble();
+}
+
+int _nonNegativeInt(Object? value, {int fallback = 0}) {
+  if (value is! num || !value.isFinite) return fallback;
+  return value.toInt().clamp(0, 0x7fffffffffffffff).toInt();
+}
+
 class RgbColor {
   const RgbColor(this.red, this.green, this.blue)
     : assert(red >= 0 && red <= 255),
@@ -29,11 +49,13 @@ class RgbColor {
   Map<String, int> toJson() => {'red': red, 'green': green, 'blue': blue};
 
   factory RgbColor.fromJson(Map<String, dynamic> json) {
-    final color = tryCreate(
-      (json['red'] as num).toInt(),
-      (json['green'] as num).toInt(),
-      (json['blue'] as num).toInt(),
-    );
+    final red = json['red'];
+    final green = json['green'];
+    final blue = json['blue'];
+    if (red is! num || green is! num || blue is! num) {
+      throw const FormatException('잘못된 RGB 값');
+    }
+    final color = tryCreate(red.toInt(), green.toInt(), blue.toInt());
     if (color == null) throw const FormatException('잘못된 RGB 값');
     return color;
   }
@@ -57,11 +79,20 @@ int _paragraphIndentFromJson(Object? value) =>
 int _autoPageIntervalFromJson(Object? value) =>
     value is int && value >= 1 && value <= 60 ? value : 5;
 
+RgbColor _colorFromJson(Object? value, RgbColor fallback) {
+  if (value is! Map<String, dynamic>) return fallback;
+  try {
+    return RgbColor.fromJson(value);
+  } on FormatException {
+    return fallback;
+  }
+}
+
 class ReaderSettings {
   const ReaderSettings({
     this.mode = ReadingMode.scroll,
-    this.background = const RgbColor(196, 236, 187),
-    this.foreground = const RgbColor(32, 48, 32),
+    this.background = _defaultBackground,
+    this.foreground = _defaultForeground,
     this.fontFileName,
     this.fontSize = 20,
     this.lineHeight = 1.65,
@@ -147,25 +178,41 @@ class ReaderSettings {
         (mode) => mode.name == json['mode'],
         orElse: () => ReadingMode.scroll,
       ),
-      background: json['background'] == null
-          ? const RgbColor(196, 236, 187)
-          : RgbColor.fromJson(json['background'] as Map<String, dynamic>),
-      foreground: json['foreground'] == null
-          ? const RgbColor(32, 48, 32)
-          : RgbColor.fromJson(json['foreground'] as Map<String, dynamic>),
-      fontFileName: json['fontFileName'] as String?,
-      fontSize: (json['fontSize'] as num? ?? 20).toDouble(),
-      lineHeight: (json['lineHeight'] as num? ?? 1.65).toDouble(),
-      horizontalPadding: (json['horizontalPadding'] as num? ?? 20).toDouble(),
+      background: _colorFromJson(json['background'], _defaultBackground),
+      foreground: _colorFromJson(json['foreground'], _defaultForeground),
+      fontFileName: json['fontFileName'] is String
+          ? json['fontFileName'] as String
+          : null,
+      fontSize: _boundedDouble(
+        json['fontSize'],
+        fallback: 20,
+        min: 14,
+        max: 36,
+      ),
+      lineHeight: _boundedDouble(
+        json['lineHeight'],
+        fallback: 1.65,
+        min: 1.2,
+        max: 2.2,
+      ),
+      horizontalPadding: _boundedDouble(
+        json['horizontalPadding'],
+        fallback: 20,
+        min: 8,
+        max: 40,
+      ),
       paragraphIndent: _paragraphIndentFromJson(json['paragraphIndent']),
-      keepAwake: json['keepAwake'] as bool? ?? false,
-      showTotalPages: json['showTotalPages'] as bool? ?? false,
+      keepAwake: json['keepAwake'] is bool ? json['keepAwake'] as bool : false,
+      showTotalPages: json['showTotalPages'] is bool
+          ? json['showTotalPages'] as bool
+          : false,
       pageTurnDirection: PageTurnDirection.values.firstWhere(
         (direction) => direction.name == json['pageTurnDirection'],
         orElse: () => PageTurnDirection.horizontal,
       ),
-      pageTurnAnimationEnabled:
-          json['pageTurnAnimationEnabled'] as bool? ?? true,
+      pageTurnAnimationEnabled: json['pageTurnAnimationEnabled'] is bool
+          ? json['pageTurnAnimationEnabled'] as bool
+          : true,
       autoPageIntervalSeconds: _autoPageIntervalFromJson(
         json['autoPageIntervalSeconds'],
       ),
@@ -191,10 +238,22 @@ class Bookmark {
   };
 
   factory Bookmark.fromJson(Map<String, dynamic> json) => Bookmark(
-    offset: (json['offset'] as num).toInt(),
+    offset: _nonNegativeInt(json['offset']),
     excerpt: json['excerpt'] as String,
     createdAt: json['createdAt'] as String,
   );
+
+  static Bookmark? tryFromJson(Object? value) {
+    if (value is! Map<String, dynamic> ||
+        value['offset'] is! num ||
+        !(value['offset'] as num).isFinite ||
+        (value['offset'] as num) < 0 ||
+        value['excerpt'] is! String ||
+        value['createdAt'] is! String) {
+      return null;
+    }
+    return Bookmark.fromJson(value);
+  }
 }
 
 class DocumentState {
@@ -229,18 +288,34 @@ class DocumentState {
     'bookmarks': bookmarks.map((bookmark) => bookmark.toJson()).toList(),
   };
 
-  factory DocumentState.fromJson(Map<String, dynamic> json) => DocumentState(
-    path: json['path'] as String,
-    offset: (json['offset'] as num? ?? 0).toInt(),
-    scrollAlignment: (json['scrollAlignment'] as num? ?? 0).toDouble(),
-    encoding: json['encoding'] as String?,
-    lastOpened: json['lastOpened'] as String? ?? '',
-    fileSize: (json['fileSize'] as num?)?.toInt(),
-    modified: json['modified'] as String?,
-    bookmarks: (json['bookmarks'] as List<dynamic>? ?? const [])
-        .map((item) => Bookmark.fromJson(item as Map<String, dynamic>))
-        .toList(),
-  );
+  factory DocumentState.fromJson(Map<String, dynamic> json, {String? path}) {
+    final rawFileSize = json['fileSize'];
+    final bookmarks = json['bookmarks'] is List
+        ? (json['bookmarks'] as List)
+              .map(Bookmark.tryFromJson)
+              .whereType<Bookmark>()
+              .toList()
+        : <Bookmark>[];
+    return DocumentState(
+      path: path ?? (json['path'] is String ? json['path'] as String : ''),
+      offset: _nonNegativeInt(json['offset']),
+      scrollAlignment: _boundedDouble(
+        json['scrollAlignment'],
+        fallback: 0,
+        min: 0,
+        max: 1,
+      ),
+      encoding: json['encoding'] is String ? json['encoding'] as String : null,
+      lastOpened: json['lastOpened'] is String
+          ? json['lastOpened'] as String
+          : '',
+      fileSize: rawFileSize is num && rawFileSize.isFinite && rawFileSize >= 0
+          ? rawFileSize.toInt()
+          : null,
+      modified: json['modified'] is String ? json['modified'] as String : null,
+      bookmarks: bookmarks,
+    );
+  }
 }
 
 class AppData {
@@ -251,20 +326,40 @@ class AppData {
   ReaderSettings settings;
   final Map<String, DocumentState> documents;
 
+  static const currentSchemaVersion = 2;
+
   Map<String, Object> toJson() => {
+    'schemaVersion': currentSchemaVersion,
     'settings': settings.toJson(),
     'documents': documents.map(
       (path, document) => MapEntry(path, document.toJson()),
     ),
   };
 
-  factory AppData.fromJson(Map<String, dynamic> json) => AppData(
-    settings: ReaderSettings.fromJson(
-      json['settings'] as Map<String, dynamic>? ?? const {},
-    ),
-    documents: (json['documents'] as Map<String, dynamic>? ?? const {}).map(
-      (path, value) =>
-          MapEntry(path, DocumentState.fromJson(value as Map<String, dynamic>)),
-    ),
-  );
+  factory AppData.fromJson(Map<String, dynamic> json) {
+    final schemaVersion = json['schemaVersion'];
+    if (schemaVersion is num && schemaVersion.toInt() > currentSchemaVersion) {
+      throw FormatException('지원하지 않는 저장 데이터 버전: $schemaVersion');
+    }
+
+    final rawSettings = json['settings'];
+    final rawDocuments = json['documents'];
+    final documents = <String, DocumentState>{};
+    if (rawDocuments is Map<String, dynamic>) {
+      for (final entry in rawDocuments.entries) {
+        if (entry.value is Map<String, dynamic>) {
+          documents[entry.key] = DocumentState.fromJson(
+            entry.value as Map<String, dynamic>,
+            path: entry.key,
+          );
+        }
+      }
+    }
+    return AppData(
+      settings: rawSettings is Map<String, dynamic>
+          ? ReaderSettings.fromJson(rawSettings)
+          : const ReaderSettings(),
+      documents: documents,
+    );
+  }
 }
