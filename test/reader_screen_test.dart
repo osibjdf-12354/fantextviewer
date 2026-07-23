@@ -14,6 +14,7 @@ import 'package:geulbom/page_index_cache.dart';
 import 'package:geulbom/page_turn_view.dart';
 import 'package:geulbom/reader_controller.dart';
 import 'package:geulbom/reader_screen.dart';
+import 'package:geulbom/strings.dart';
 import 'package:geulbom/text_document.dart';
 import 'package:geulbom/text_paginator.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -3176,6 +3177,218 @@ void main() {
     expect(await tester.runAsync(imported.file.exists), isFalse);
     expect(store.data.settings.fontFileName, isNull);
     expect(find.text('글꼴을 삭제하지 못했습니다.'), findsNothing);
+  });
+
+  testWidgets('failed document decode leaves persisted state untouched', (
+    tester,
+  ) async {
+    final directory = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_reader_decode_failure'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => directory.delete(recursive: true)));
+    final file = File('${directory.path}${Platform.pathSeparator}novel.txt');
+    await tester.runAsync(() => file.writeAsString('replacement'));
+    final store = _MemoryStore()
+      ..touchRecent(
+        file.path,
+        fileSize: 3,
+        modified: DateTime.utc(2020, 1, 1),
+        openedAt: DateTime.utc(2020, 1, 1),
+      )
+      ..setEncoding(file.path, TextEncoding.utf8.name)
+      ..updateProgress(file.path, offset: 2, documentLength: 3)
+      ..addBookmark(
+        file.path,
+        const Bookmark(offset: 2, excerpt: 'saved', createdAt: 'now'),
+      );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderScreen(
+          path: file.path,
+          store: store,
+          loadDocument: (_, {forced}) async =>
+              throw const FormatException('decode failed'),
+        ),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text(AppStrings.fileReadFailed).evaluate().isNotEmpty,
+    );
+
+    final state = store.document(file.path);
+    expect(state.offset, 2);
+    expect(state.encoding, TextEncoding.utf8.name);
+    expect(state.bookmarks.single.excerpt, 'saved');
+    expect(state.fileSize, 3);
+    expect(state.modified, '2020-01-01T00:00:00.000Z');
+  });
+
+  testWidgets('changed content is auto-detected once before committing state', (
+    tester,
+  ) async {
+    final directory = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_reader_content_change'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => directory.delete(recursive: true)));
+    final file = File('${directory.path}${Platform.pathSeparator}novel.txt');
+    await tester.runAsync(() => file.writeAsString('x'));
+    final stat = (await tester.runAsync(file.stat))!;
+    final store = _MemoryStore();
+    store.updateFileFingerprint(
+      file.path,
+      fileSize: stat.size,
+      modified: stat.modified,
+      contentFingerprint: 'sha256:old',
+    );
+    store.setEncoding(file.path, TextEncoding.utf8.name);
+    store.updateProgress(file.path, offset: 1, documentLength: 1);
+    final forcedEncodings = <TextEncoding?>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderScreen(
+          path: file.path,
+          store: store,
+          loadDocument: (_, {forced}) async {
+            forcedEncodings.add(forced);
+            return DecodedText(
+              forced == null ? 'auto decode' : 'saved decode',
+              forced == null ? TextEncoding.cp949 : forced,
+              fingerprint: 'sha256:new',
+            );
+          },
+        ),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text('auto decode').evaluate().isNotEmpty,
+    );
+
+    expect(forcedEncodings, [TextEncoding.utf8, null]);
+    final state = store.document(file.path);
+    expect(state.offset, 0);
+    expect(state.encoding, TextEncoding.cp949.name);
+    expect(state.contentFingerprint, 'sha256:new');
+  });
+
+  testWidgets('document remains readable when initial state save fails', (
+    tester,
+  ) async {
+    final directory = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_reader_save_failure'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => directory.delete(recursive: true)));
+    final file = File('${directory.path}${Platform.pathSeparator}novel.txt');
+    await tester.runAsync(() => file.writeAsString('body stays visible'));
+    final store = _TrackingStore(failNextSave: true);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderScreen(
+          path: file.path,
+          store: store,
+          loadDocument: (_, {forced}) async => const DecodedText(
+            'body stays visible',
+            TextEncoding.utf8,
+            fingerprint: 'sha256:body',
+          ),
+        ),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text('body stays visible').evaluate().isNotEmpty,
+    );
+
+    expect(find.text(AppStrings.fileReadFailed), findsNothing);
+    expect(find.text(AppStrings.saveReadingPositionFailed), findsOneWidget);
+  });
+
+  testWidgets('failed manual encoding reload preserves the saved encoding', (
+    tester,
+  ) async {
+    _mockWakelock(tester);
+    final directory = (await tester.runAsync(
+      () => Directory.systemTemp.createTemp('geulbom_reader_encoding_failure'),
+    ))!;
+    addTearDown(() => tester.runAsync(() => directory.delete(recursive: true)));
+    final file = File('${directory.path}${Platform.pathSeparator}novel.txt');
+    await tester.runAsync(() => file.writeAsString('x'));
+    final store = _MemoryStore()
+      ..setEncoding(file.path, TextEncoding.utf8.name);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderScreen(
+          path: file.path,
+          store: store,
+          loadDocument: (_, {forced}) async {
+            if (forced == TextEncoding.utf16le) {
+              throw const FormatException('decode failed');
+            }
+            return DecodedText(
+              'x',
+              forced ?? TextEncoding.utf8,
+              fingerprint: 'sha256:x',
+            );
+          },
+        ),
+      ),
+    );
+    await _pumpUntil(tester, () => find.text('x').evaluate().isNotEmpty);
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(AppStrings.fileInfo));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(AppStrings.changeEncoding));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('UTF-16 LE').last);
+    await _pumpUntil(
+      tester,
+      () => find.text(AppStrings.fileReadFailed).evaluate().isNotEmpty,
+    );
+
+    expect(store.document(file.path).encoding, TextEncoding.utf8.name);
+  });
+
+  testWidgets('back navigation stays in the reader when flush fails', (
+    tester,
+  ) async {
+    final store = _TrackingStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: FilledButton(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute(
+                  builder: (_) => ReaderView.test(
+                    path: '/book.txt',
+                    title: 'book.txt',
+                    text: 'body',
+                    encoding: TextEncoding.utf8,
+                    store: store,
+                  ),
+                ),
+              ),
+              child: const Text('open reader'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open reader'));
+    await tester.pumpAndSettle();
+    store.failNextSave = true;
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('body'), findsOneWidget);
+    expect(find.text(AppStrings.saveReadingPositionFailed), findsOneWidget);
   });
 }
 

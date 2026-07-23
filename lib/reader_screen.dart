@@ -29,17 +29,22 @@ export 'reader_settings_sheet.dart' show contrastRatio;
 
 const _scrollTopPadding = 16.0;
 
+typedef TextDocumentLoader =
+    Future<DecodedText> Function(String path, {TextEncoding? forced});
+
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
     super.key,
     required this.path,
     required this.store,
     this.fontLibrary,
+    this.loadDocument = loadTextFile,
   });
 
   final String path;
   final AppStore store;
   final FontLibrary? fontLibrary;
+  final TextDocumentLoader loadDocument;
 
   @override
   State<ReaderScreen> createState() => _ReaderScreenState();
@@ -80,11 +85,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
       final file = File(widget.path);
       final stat = await file.stat();
       if (!mounted || generation != _generation) return;
-      widget.store.updateFileFingerprint(
-        widget.path,
-        fileSize: stat.size,
-        modified: stat.modified,
-      );
       final saved = widget.store.document(widget.path).encoding;
       final encoding = forced ?? _encodingByName(saved);
       if (stat.size > 32 * 1024 * 1024) {
@@ -95,14 +95,37 @@ class _ReaderScreenState extends State<ReaderScreen> {
           );
         });
       }
-      final document = await loadTextFile(widget.path, forced: encoding);
-      final decodedStat = await file.stat();
-      if (decodedStat.size != stat.size ||
-          decodedStat.modified.toUtc() != stat.modified.toUtc()) {
-        throw const FileSystemException(AppStrings.fileChangedWhileReading);
+      Future<DecodedText> decode(TextEncoding? selectedEncoding) async {
+        final decoded = await widget.loadDocument(
+          widget.path,
+          forced: selectedEncoding,
+        );
+        final decodedStat = await file.stat();
+        if (decodedStat.size != stat.size ||
+            decodedStat.modified.toUtc() != stat.modified.toUtc()) {
+          throw const FileSystemException(AppStrings.fileChangedWhileReading);
+        }
+        return decoded;
+      }
+
+      var document = await decode(encoding);
+      final contentChanged = widget.store.fileChanged(
+        widget.path,
+        fileSize: stat.size,
+        modified: stat.modified,
+        contentFingerprint: document.fingerprint,
+      );
+      if (contentChanged && forced == null && saved != null) {
+        document = await decode(null);
       }
       if (!mounted || generation != _generation) return;
 
+      widget.store.updateFileFingerprint(
+        widget.path,
+        fileSize: stat.size,
+        modified: stat.modified,
+        contentFingerprint: document.fingerprint,
+      );
       widget.store.setEncoding(widget.path, document.encoding.name);
       widget.store.touchRecent(
         widget.path,
@@ -115,12 +138,20 @@ class _ReaderScreenState extends State<ReaderScreen> {
         offset: current.offset,
         documentLength: document.text.length,
       );
-      await widget.store.save();
-      if (!mounted || generation != _generation) return;
       setState(() {
         _document = document;
         _stat = stat;
       });
+      try {
+        await widget.store.save();
+      } catch (error, stackTrace) {
+        debugPrint(AppStrings.readingStateSaveDiagnostic(error, stackTrace));
+        if (mounted && generation == _generation) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text(AppStrings.saveReadingPositionFailed)),
+          );
+        }
+      }
     } catch (error) {
       if (!mounted || generation != _generation) return;
       setState(() => _error = error);
@@ -1320,6 +1351,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       await _controller.flush();
     } catch (_) {
       if (mounted) _showMessage(AppStrings.saveReadingPositionFailed);
+      return;
     }
     if (!mounted) return;
     setState(() => _allowPop = true);
@@ -1331,6 +1363,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       await _controller.flush();
     } catch (_) {
       if (mounted) _showMessage(AppStrings.saveReadingPositionFailed);
+      return;
     }
     await SystemNavigator.pop();
   }
@@ -1355,8 +1388,6 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
             PopupMenuButton<TextEncoding>(
               onSelected: (encoding) {
                 Navigator.pop(dialogContext);
-                widget.store.setEncoding(widget.path, encoding.name);
-                _scheduleSave();
                 widget.onEncodingChanged!(encoding);
               },
               itemBuilder: _encodingItems,
