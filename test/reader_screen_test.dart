@@ -1340,6 +1340,152 @@ void main() {
     expect(find.text('찾을본문'), findsOneWidget);
   });
 
+  testWidgets(
+    'auto mode temporarily uses vertical pages and restores settings',
+    (tester) async {
+      const text = 'firstsecondthird';
+      const pages = [
+        TextPage(start: 0, end: 5),
+        TextPage(start: 5, end: 11),
+        TextPage(start: 11, end: 16),
+      ];
+      final store = _MemoryStore();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderView(
+            path: '/book.txt',
+            title: 'book.txt',
+            text: text,
+            encoding: TextEncoding.utf8,
+            store: store,
+            paginator:
+                ({
+                  required text,
+                  required size,
+                  required style,
+                  required paragraphIndent,
+                  onProgress,
+                  onBatch,
+                  onLayout,
+                  isCancelled,
+                }) async {
+                  onBatch?.call(pages);
+                  return pages;
+                },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(ScrollablePositionedList), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SwitchListTile>(find.byKey(const Key('auto-mode-switch')))
+            .value,
+        isFalse,
+      );
+      await tester.tap(find.byKey(const Key('auto-mode-switch')));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+
+      final pager = tester.widget<PageTurnView>(find.byType(PageTurnView));
+      expect(pager.direction, PageTurnDirection.vertical);
+      expect(pager.tapOnly, isFalse);
+      expect(store.data.settings.mode, ReadingMode.scroll);
+
+      await tester.pump(const Duration(seconds: 4));
+      expect(store.document('/book.txt').offset, 0);
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(store.document('/book.txt').offset, 5);
+
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('auto-mode-switch')));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(ScrollablePositionedList), findsOneWidget);
+    },
+  );
+
+  testWidgets('manual page turn restarts the full auto interval', (
+    tester,
+  ) async {
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(autoPageIntervalSeconds: 5));
+    await _pumpAutoReader(tester, store);
+    await _enableAutoMode(tester);
+
+    await tester.drag(find.byType(PageTurnView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    expect(store.document('/book.txt').offset, 5);
+
+    await tester.pump(const Duration(milliseconds: 4850));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(store.document('/book.txt').offset, 5);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(store.document('/book.txt').offset, 11);
+  });
+
+  testWidgets('auto mode waits until the next calculated page is available', (
+    tester,
+  ) async {
+    const text = 'firstsecondthird';
+    const pages = [
+      TextPage(start: 0, end: 5),
+      TextPage(start: 5, end: 11),
+      TextPage(start: 11, end: 16),
+    ];
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(autoPageIntervalSeconds: 1));
+    final completion = Completer<List<TextPage>>();
+    addTearDown(() {
+      if (!completion.isCompleted) completion.complete(pages);
+    });
+    PaginationBatchCallback? emitBatch;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                required paragraphIndent,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                emitBatch = onBatch;
+                onBatch?.call([pages.first]);
+                return completion.future;
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+    await _enableAutoMode(tester);
+    await tester.pump(const Duration(seconds: 2));
+    expect(store.document('/book.txt').offset, 0);
+
+    emitBatch?.call(pages.sublist(1));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(store.document('/book.txt').offset, 5);
+    completion.complete(pages);
+  });
+
   testWidgets('햄버거 메뉴에서 읽기 모드와 RGB 배경색을 바꾼다', (tester) async {
     final store = _MemoryStore();
     await tester.pumpWidget(
@@ -2141,6 +2287,55 @@ Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {
 
 Future<void> _dismissSettings(WidgetTester tester) async {
   expect(find.text('적용'), findsNothing);
+  await tester.binding.handlePopRoute();
+  await tester.pumpAndSettle();
+}
+
+Future<void> _pumpAutoReader(
+  WidgetTester tester,
+  _MemoryStore store, {
+  int pageCount = 3,
+}) async {
+  const allText = 'firstsecondthird';
+  const allPages = [
+    TextPage(start: 0, end: 5),
+    TextPage(start: 5, end: 11),
+    TextPage(start: 11, end: 16),
+  ];
+  final pages = allPages.take(pageCount).toList();
+  final text = allText.substring(0, pages.last.end);
+  await tester.pumpWidget(
+    MaterialApp(
+      home: ReaderView(
+        path: '/book.txt',
+        title: 'book.txt',
+        text: text,
+        encoding: TextEncoding.utf8,
+        store: store,
+        paginator:
+            ({
+              required text,
+              required size,
+              required style,
+              required paragraphIndent,
+              onProgress,
+              onBatch,
+              onLayout,
+              isCancelled,
+            }) async {
+              onBatch?.call(pages);
+              return pages;
+            },
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+Future<void> _enableAutoMode(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.menu));
+  await tester.pumpAndSettle();
+  await tester.tap(find.byKey(const Key('auto-mode-switch')));
   await tester.binding.handlePopRoute();
   await tester.pumpAndSettle();
 }

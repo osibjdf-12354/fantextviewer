@@ -229,7 +229,12 @@ class _ReaderViewState extends State<ReaderView> {
   late int _offset;
   final _itemScrollController = ItemScrollController();
   final _itemPositionsListener = ItemPositionsListener.create();
+  final _pageTurnKey = GlobalKey<PageTurnViewState>();
   Timer? _saveTimer;
+  Timer? _autoTimer;
+  bool _autoMode = false;
+  int _autoPauseDepth = 0;
+  bool _appActive = true;
   List<TextPage>? _pages;
   int? _pageIndex;
   int? _pendingTargetPage;
@@ -246,7 +251,10 @@ class _ReaderViewState extends State<ReaderView> {
   bool _paginationComplete = false;
 
   List<TextPage>? get _completePages => _paginationComplete ? _pages : null;
-  bool get _isPaged => _settings.mode != ReadingMode.scroll;
+  ReadingMode get _activeMode => _autoMode ? ReadingMode.page : _settings.mode;
+  PageTurnDirection get _activePageTurnDirection =>
+      _autoMode ? PageTurnDirection.vertical : _settings.pageTurnDirection;
+  bool get _isPaged => _activeMode != ReadingMode.scroll;
 
   int get _fallbackCharactersPerPage {
     final size = _pageSize;
@@ -312,6 +320,7 @@ class _ReaderViewState extends State<ReaderView> {
   void dispose() {
     _itemPositionsListener.itemPositions.removeListener(_recordScrollPosition);
     _saveTimer?.cancel();
+    _autoTimer?.cancel();
     unawaited(widget.store.save());
     unawaited(WakelockPlus.disable());
     super.dispose();
@@ -338,6 +347,13 @@ class _ReaderViewState extends State<ReaderView> {
         ],
       ),
       drawer: _buildDrawer(),
+      onDrawerChanged: (open) {
+        if (open) {
+          _pauseAuto(cancelTurn: true);
+        } else {
+          _resumeAuto();
+        }
+      },
       body: widget.text.isEmpty
           ? Center(
               child: Text('빈 파일입니다.', style: TextStyle(color: foreground)),
@@ -358,7 +374,7 @@ class _ReaderViewState extends State<ReaderView> {
                     _paginationKey != null) {
                   _ensurePages(pageSize);
                 }
-                return _settings.mode == ReadingMode.scroll
+                return _activeMode == ReadingMode.scroll
                     ? _buildScrollReader()
                     : _buildPageReader();
               },
@@ -374,6 +390,13 @@ class _ReaderViewState extends State<ReaderView> {
             ListTile(
               title: Text(widget.title),
               subtitle: Text('현재 $_currentPageNumber페이지'),
+            ),
+            SwitchListTile(
+              key: const Key('auto-mode-switch'),
+              secondary: const Icon(Icons.play_circle_outline),
+              title: const Text('오토모드'),
+              value: _autoMode,
+              onChanged: widget.text.isEmpty ? null : _setAutoMode,
             ),
             const Divider(),
             _drawerItem(Icons.folder_open, '파일 열기', widget.onOpenFile),
@@ -480,10 +503,13 @@ class _ReaderViewState extends State<ReaderView> {
     return Stack(
       children: [
         PageTurnView(
+          key: _pageTurnKey,
           index: safeIndex,
           itemCount: pages.length,
-          direction: _settings.pageTurnDirection,
-          tapOnly: _settings.mode == ReadingMode.tap,
+          direction: _activePageTurnDirection,
+          tapOnly: _activeMode == ReadingMode.tap,
+          onInteractionStart: _pauseAuto,
+          onInteractionEnd: _resumeAuto,
           onPageChanged: (index) {
             final activePages = _pageWindow?.pages ?? _pages;
             if (!identical(activePages, pages)) return;
@@ -498,6 +524,7 @@ class _ReaderViewState extends State<ReaderView> {
               _pendingScrollOffset = null;
               _setOffset(nextOffset);
             });
+            _restartAutoTimer();
           },
           itemBuilder: (context, index) {
             final page = pages[index];
@@ -690,10 +717,13 @@ class _ReaderViewState extends State<ReaderView> {
         });
       });
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _restartAutoTimer();
+    });
   }
 
   void _recordScrollPosition() {
-    if (_settings.mode != ReadingMode.scroll) return;
+    if (_activeMode != ReadingMode.scroll) return;
     final visible =
         _itemPositionsListener.itemPositions.value
             .where((position) => position.itemTrailingEdge > 0)
@@ -752,7 +782,7 @@ class _ReaderViewState extends State<ReaderView> {
     _pendingTargetPage = null;
     _pendingPageOffset = null;
     setState(() => _setOffset(offset));
-    if (_settings.mode == ReadingMode.scroll) {
+    if (_activeMode == ReadingMode.scroll) {
       _pendingScrollOffset = _offset;
       if (_itemScrollController.isAttached) {
         _itemScrollController.jumpTo(index: _chunkForOffset(_offset));
@@ -842,7 +872,7 @@ class _ReaderViewState extends State<ReaderView> {
 
     final totalPages = _displayTotalPages;
     final targetOffset = sourceOffset;
-    if (_settings.mode == ReadingMode.scroll) {
+    if (_activeMode == ReadingMode.scroll) {
       _jumpToOffset(targetOffset);
       return;
     }
@@ -909,6 +939,55 @@ class _ReaderViewState extends State<ReaderView> {
       _pendingPageOffset = null;
       _setOffset(sourceOffset);
     });
+    _restartAutoTimer();
+  }
+
+  void _setAutoMode(bool enabled) {
+    if (_autoMode == enabled) return;
+    _autoTimer?.cancel();
+    if (!enabled && _settings.mode == ReadingMode.scroll) {
+      _pendingScrollOffset = _offset;
+    }
+    setState(() => _autoMode = enabled);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _restartAutoTimer();
+    });
+  }
+
+  void _restartAutoTimer() {
+    _autoTimer?.cancel();
+    if (!_autoMode || _autoPauseDepth > 0 || !_appActive) return;
+    final pages = _pageWindow?.pages ?? _pages;
+    final index = _pageIndex;
+    if (pages == null || index == null || index >= pages.length) return;
+    if (pages[index].end == widget.text.length) {
+      _setAutoMode(false);
+      _showMessage('마지막 페이지입니다. 오토모드를 종료했습니다.');
+      return;
+    }
+    if (index + 1 >= pages.length) return;
+    _autoTimer = Timer(
+      Duration(seconds: _settings.autoPageIntervalSeconds),
+      () => unawaited(_advanceAutoPage()),
+    );
+  }
+
+  Future<void> _advanceAutoPage() async {
+    if (!_autoMode || _autoPauseDepth > 0 || !_appActive) return;
+    final moved =
+        await _pageTurnKey.currentState?.animateNext(Axis.vertical) ?? false;
+    if (!moved && mounted) _restartAutoTimer();
+  }
+
+  void _pauseAuto({bool cancelTurn = false}) {
+    _autoPauseDepth++;
+    _autoTimer?.cancel();
+    if (cancelTurn) _pageTurnKey.currentState?.cancelTurn();
+  }
+
+  void _resumeAuto() {
+    if (_autoPauseDepth > 0) _autoPauseDepth--;
+    if (mounted && _autoPauseDepth == 0) _restartAutoTimer();
   }
 
   void _scheduleSave() {
