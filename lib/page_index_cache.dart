@@ -127,7 +127,7 @@ void _reportCacheError(Object error, StackTrace stackTrace) {
     FlutterErrorDetails(
       exception: error,
       stack: stackTrace,
-      library: 'geulbom page cache',
+      library: 'fantextviewer page cache',
       context: ErrorDescription('while reading or writing a page index'),
     ),
   );

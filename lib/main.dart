@@ -30,7 +30,7 @@ Future<void> main() async {
     Directory('${directory.path}${Platform.pathSeparator}fonts'),
   );
   await restoreSelectedFont(store, fontLibrary);
-  runApp(GeulbomApp(store: store, fontLibrary: fontLibrary));
+  runApp(FanTextViewerApp(store: store, fontLibrary: fontLibrary));
 }
 
 Future<void> restoreSelectedFont(
@@ -48,8 +48,8 @@ Future<void> restoreSelectedFont(
   }
 }
 
-class GeulbomApp extends StatelessWidget {
-  const GeulbomApp({super.key, required this.store, this.fontLibrary});
+class FanTextViewerApp extends StatelessWidget {
+  const FanTextViewerApp({super.key, required this.store, this.fontLibrary});
 
   final AppStore store;
   final FontLibrary? fontLibrary;

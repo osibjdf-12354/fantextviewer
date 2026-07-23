@@ -1,5 +1,5 @@
-name: geulbom
-description: "Android용 한국어 TXT 뷰어 글봄"
+name: fantextviewer
+description: "개인용 Android 한국어 TXT 소설 뷰어 판갤텍뷰"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

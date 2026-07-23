@@ -15,7 +15,7 @@ enum TextEncoding { utf8, utf16le, utf16be, cp949 }
 
 const maxSupportedTextFileBytes = 64 * 1024 * 1024;
 const maxWholeFileDecodeBytes = 32 * 1024 * 1024;
-const _textFileChannel = MethodChannel('com.songs.geulbom/text-file');
+const _textFileChannel = MethodChannel('com.songs.fantextviewer/text-file');
 
 class TextFileTooLargeException implements Exception {
   const TextFileTooLargeException({

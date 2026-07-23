@@ -4,9 +4,9 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/app_store.dart';
-import 'package:geulbom/reader_screen.dart';
-import 'package:geulbom/text_document.dart';
+import 'package:fantextviewer/app_store.dart';
+import 'package:fantextviewer/reader_screen.dart';
+import 'package:fantextviewer/text_document.dart';
 
 void main() {
   test('20MB 한글 UTF-8 본문을 디코딩하고 청크로 준비한다', () async {

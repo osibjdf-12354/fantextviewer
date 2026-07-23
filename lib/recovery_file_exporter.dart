@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/services.dart';
 
-const _textFileChannel = MethodChannel('com.songs.geulbom/text-file');
+const _textFileChannel = MethodChannel('com.songs.fantextviewer/text-file');
 const _suggestedRecoveryName = 'fantextviewer-state-recovery.json';
 
 class RecoveryFileExporter {

@@ -27,7 +27,7 @@ if (releaseRequested && (!releaseSigningFile.exists() || missingSigningPropertie
 }
 
 android {
-    namespace = "com.songs.geulbom"
+    namespace = "com.songs.fantextviewer"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 

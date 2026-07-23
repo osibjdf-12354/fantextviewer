@@ -4,7 +4,7 @@ set -euo pipefail
 package="com.songs.geulbom"
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 created_signing=0
-key_file="$root/android/app/geulbom-local.jks"
+key_file="$root/android/app/fantextviewer-local.jks"
 properties_file="$root/android/key.properties"
 apk_v1="$root/build/android-smoke-v1.apk"
 apk_v2="$root/build/android-smoke-v2.apk"
@@ -30,27 +30,43 @@ adb shell appops set --uid "$package" MANAGE_EXTERNAL_STORAGE allow
   ./gradlew connectedDebugAndroidTest
 )
 
-if [[ ! -f "$key_file" && ! -f "$properties_file" ]]; then
+if [[ -f "$properties_file" ]]; then
+  configured_store_file="$(
+    sed -n 's/^storeFile=//p' "$properties_file" |
+      head -n 1 |
+      tr -d '\r'
+  )"
+  test -n "$configured_store_file"
+  if [[ "$configured_store_file" = /* ]]; then
+    key_file="$configured_store_file"
+  else
+    key_file="$root/android/$configured_store_file"
+  fi
+  if [[ ! -f "$key_file" ]]; then
+    echo "The keystore configured by android/key.properties does not exist." >&2
+    exit 1
+  fi
+elif [[ -f "$key_file" ]]; then
+  echo "android/key.properties is required for the existing keystore." >&2
+  exit 1
+else
   created_signing=1
   password="$(openssl rand -hex 24)"
   keytool -genkeypair \
     -keystore "$key_file" \
     -storetype PKCS12 \
-    -alias geulbom-local \
+    -alias fantextviewer-local \
     -keyalg RSA \
     -keysize 3072 \
     -validity 3650 \
-    -dname "CN=Geulbom Local, OU=Personal Sideload, O=Local, C=KR" \
+    -dname "CN=FanTextViewer Local, OU=Personal Sideload, O=Local, C=KR" \
     -storepass "$password" \
     -keypass "$password"
   printf '%s\n' \
-    "storeFile=app/geulbom-local.jks" \
+    "storeFile=app/fantextviewer-local.jks" \
     "storePassword=$password" \
-    "keyAlias=geulbom-local" \
+    "keyAlias=fantextviewer-local" \
     "keyPassword=$password" > "$properties_file"
-elif [[ ! -f "$key_file" || ! -f "$properties_file" ]]; then
-  echo "Both Android signing files must exist or both must be absent." >&2
-  exit 1
 fi
 
 flutter build apk --release --build-number=900001

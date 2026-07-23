@@ -3,11 +3,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/file_browser.dart';
+import 'package:fantextviewer/file_browser.dart';
 
 void main() {
   test('폴더를 먼저 표시하고 보이는 TXT 파일만 남긴다', () async {
-    final directory = await Directory.systemTemp.createTemp('geulbom_files');
+    final directory = await Directory.systemTemp.createTemp(
+      'fantextviewer_files',
+    );
     addTearDown(() => directory.delete(recursive: true));
     await Directory(
       '${directory.path}${Platform.pathSeparator}folder',
@@ -32,7 +34,9 @@ void main() {
   });
 
   test('수정일 정렬에서도 폴더는 파일보다 먼저다', () async {
-    final directory = await Directory.systemTemp.createTemp('geulbom_sort');
+    final directory = await Directory.systemTemp.createTemp(
+      'fantextviewer_sort',
+    );
     addTearDown(() => directory.delete(recursive: true));
     await Directory(
       '${directory.path}${Platform.pathSeparator}folder',
@@ -54,7 +58,9 @@ void main() {
   });
 
   test('stats visible entries concurrently with a bounded batch', () async {
-    final directory = await Directory.systemTemp.createTemp('geulbom_many');
+    final directory = await Directory.systemTemp.createTemp(
+      'fantextviewer_many',
+    );
     addTearDown(() => directory.delete(recursive: true));
     for (var index = 0; index < 64; index++) {
       await File(
@@ -83,7 +89,9 @@ void main() {
   });
 
   test('one unreadable entry does not abort the directory listing', () async {
-    final directory = await Directory.systemTemp.createTemp('geulbom_partial');
+    final directory = await Directory.systemTemp.createTemp(
+      'fantextviewer_partial',
+    );
     addTearDown(() => directory.delete(recursive: true));
     final good = File('${directory.path}${Platform.pathSeparator}good.txt');
     final broken = File('${directory.path}${Platform.pathSeparator}broken.txt');

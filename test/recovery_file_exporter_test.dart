@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/recovery_file_exporter.dart';
+import 'package:fantextviewer/recovery_file_exporter.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

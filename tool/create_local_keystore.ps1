@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$KeyAlias = "geulbom-local",
+    [string]$KeyAlias = "fantextviewer-local",
     [int]$ValidityDays = 3650
 )
 
@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 $androidRoot = Join-Path $projectRoot "android"
-$keystorePath = Join-Path $androidRoot "app\geulbom-local.jks"
+$keystorePath = Join-Path $androidRoot "app\fantextviewer-local.jks"
 $propertiesPath = Join-Path $androidRoot "key.properties"
 
 if (Test-Path -LiteralPath $keystorePath) {
@@ -38,7 +38,7 @@ try {
     $random.Dispose()
 }
 $password = [Convert]::ToBase64String($passwordBytes)
-$env:GEULBOM_KEYSTORE_PASSWORD = $password
+$env:FANTEXTVIEWER_KEYSTORE_PASSWORD = $password
 
 try {
     & $keytoolPath `
@@ -49,15 +49,15 @@ try {
         -keyalg RSA `
         -keysize 3072 `
         -validity $ValidityDays `
-        -dname "CN=Geulbom Local, OU=Personal Sideload, O=Local, C=KR" `
-        -storepass:env GEULBOM_KEYSTORE_PASSWORD `
-        -keypass:env GEULBOM_KEYSTORE_PASSWORD
+        -dname "CN=FanTextViewer Local, OU=Personal Sideload, O=Local, C=KR" `
+        -storepass:env FANTEXTVIEWER_KEYSTORE_PASSWORD `
+        -keypass:env FANTEXTVIEWER_KEYSTORE_PASSWORD
     if ($LASTEXITCODE -ne 0) {
         throw "keytool failed with exit code $LASTEXITCODE."
     }
 
     $properties = @(
-        "storeFile=app/geulbom-local.jks"
+        "storeFile=app/fantextviewer-local.jks"
         "storePassword=$password"
         "keyAlias=$KeyAlias"
         "keyPassword=$password"
@@ -73,7 +73,7 @@ try {
     }
     throw
 } finally {
-    Remove-Item Env:GEULBOM_KEYSTORE_PASSWORD -ErrorAction SilentlyContinue
+    Remove-Item Env:FANTEXTVIEWER_KEYSTORE_PASSWORD -ErrorAction SilentlyContinue
 }
 
 Write-Host "Created the local release key and signing properties."

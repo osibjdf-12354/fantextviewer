@@ -2,15 +2,17 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/app_store.dart';
-import 'package:geulbom/font_library.dart';
-import 'package:geulbom/main.dart';
-import 'package:geulbom/models.dart';
-import 'package:geulbom/strings.dart';
+import 'package:fantextviewer/app_store.dart';
+import 'package:fantextviewer/font_library.dart';
+import 'package:fantextviewer/main.dart';
+import 'package:fantextviewer/models.dart';
+import 'package:fantextviewer/strings.dart';
 
 void main() {
   test('저장한 글꼴 파일이 없으면 시스템 기본 글꼴로 복구한다', () async {
-    final root = await Directory.systemTemp.createTemp('geulbom_missing_font');
+    final root = await Directory.systemTemp.createTemp(
+      'fantextviewer_missing_font',
+    );
     addTearDown(() => root.delete(recursive: true));
     final store = _MemoryStore()
       ..updateSettings(const ReaderSettings(fontFileName: 'missing.ttf'));
@@ -37,7 +39,7 @@ void main() {
 
   test('기본 글꼴 복구 저장이 실패해도 복구된 설정으로 시작한다', () async {
     final root = await Directory.systemTemp.createTemp(
-      'geulbom_font_save_failure',
+      'fantextviewer_font_save_failure',
     );
     addTearDown(() => root.delete(recursive: true));
     final store = _FailingSaveStore()
@@ -54,7 +56,7 @@ void main() {
   testWidgets('앱이 한국어 제목과 파일 탐색 버튼으로 시작한다', (tester) async {
     final store = _MemoryStore();
 
-    await tester.pumpWidget(GeulbomApp(store: store));
+    await tester.pumpWidget(FanTextViewerApp(store: store));
 
     expect(find.text(AppStrings.appName), findsOneWidget);
     expect(find.byIcon(Icons.folder_open), findsWidgets);
@@ -66,7 +68,7 @@ void main() {
   ) async {
     final store = _MemoryStore()..recoveryFile = File('state.json.broken');
 
-    await tester.pumpWidget(GeulbomApp(store: store));
+    await tester.pumpWidget(FanTextViewerApp(store: store));
 
     expect(find.text('저장 상태 복구'), findsOneWidget);
     expect(find.text('상태 파일 가져오기'), findsOneWidget);

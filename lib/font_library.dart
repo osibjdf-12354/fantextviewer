@@ -28,7 +28,7 @@ class ImportedFont {
 }
 
 String? fontFamilyFor(String? fileName) =>
-    fileName == null ? null : 'geulbom::$fileName';
+    fileName == null ? null : 'fantextviewer::$fileName';
 
 Future<String?> pickFontFile() async {
   const fonts = XTypeGroup(

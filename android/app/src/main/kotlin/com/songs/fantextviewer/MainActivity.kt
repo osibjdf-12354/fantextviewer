@@ -1,4 +1,4 @@
-package com.songs.geulbom
+package com.songs.fantextviewer
 
 import android.app.Activity
 import android.content.Intent
@@ -23,7 +23,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "com.songs.geulbom/text-file",
+            "com.songs.fantextviewer/text-file",
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "decode" -> decodeTextFile(call.arguments as? Map<*, *>, result)

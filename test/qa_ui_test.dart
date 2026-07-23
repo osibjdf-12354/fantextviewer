@@ -2,9 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/app_store.dart';
-import 'package:geulbom/reader_screen.dart';
-import 'package:geulbom/text_document.dart';
+import 'package:fantextviewer/app_store.dart';
+import 'package:fantextviewer/reader_screen.dart';
+import 'package:fantextviewer/text_document.dart';
 
 void main() {
   testWidgets('320x568 화면에서 RGB 오류를 표시하고 잘못된 값을 저장하지 않는다', (tester) async {

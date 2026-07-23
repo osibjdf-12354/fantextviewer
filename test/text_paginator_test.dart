@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/text_paginator.dart';
+import 'package:fantextviewer/text_paginator.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

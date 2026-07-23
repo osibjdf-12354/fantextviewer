@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/app_store.dart';
-import 'package:geulbom/models.dart';
+import 'package:fantextviewer/app_store.dart';
+import 'package:fantextviewer/models.dart';
 
 void main() {
   test('설정과 문서 상태를 JSON 파일에서 복원한다', () async {
-    final directory = await Directory.systemTemp.createTemp('geulbom_store');
+    final directory = await Directory.systemTemp.createTemp(
+      'fantextviewer_store',
+    );
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}${Platform.pathSeparator}state.json');
     final store = AppStore(file);
@@ -180,7 +182,9 @@ void main() {
   test(
     'writes the current schema and loads legacy state without one',
     () async {
-      final directory = await Directory.systemTemp.createTemp('geulbom_schema');
+      final directory = await Directory.systemTemp.createTemp(
+        'fantextviewer_schema',
+      );
       addTearDown(() => directory.delete(recursive: true));
       final file = File('${directory.path}${Platform.pathSeparator}state.json');
       await file.writeAsString('''
@@ -241,7 +245,9 @@ void main() {
   });
 
   test('save captures a snapshot before the first asynchronous wait', () async {
-    final directory = await Directory.systemTemp.createTemp('geulbom_snapshot');
+    final directory = await Directory.systemTemp.createTemp(
+      'fantextviewer_snapshot',
+    );
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}${Platform.pathSeparator}state.json');
     final store = AppStore(file)
@@ -259,7 +265,9 @@ void main() {
   test(
     'overlapping saves are serialized and the latest request wins',
     () async {
-      final directory = await Directory.systemTemp.createTemp('geulbom_serial');
+      final directory = await Directory.systemTemp.createTemp(
+        'fantextviewer_serial',
+      );
       addTearDown(() => directory.delete(recursive: true));
       final file = File('${directory.path}${Platform.pathSeparator}state.json');
       final store = AppStore(file);
@@ -286,7 +294,7 @@ void main() {
 
   test('each corrupted state is preserved in a separate backup', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_broken_unique',
+      'fantextviewer_broken_unique',
     );
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}${Platform.pathSeparator}state.json');
@@ -310,7 +318,7 @@ void main() {
 
   test('save failures are returned to every caller', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_save_error',
+      'fantextviewer_save_error',
     );
     addTearDown(() => directory.delete(recursive: true));
     final parentFile = File(
@@ -506,7 +514,7 @@ void main() {
 
   test('imports a repaired state file', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_state_import',
+      'fantextviewer_state_import',
     );
     addTearDown(() => directory.delete(recursive: true));
     final stateFile = File(
@@ -530,7 +538,7 @@ void main() {
 
   test('successful repair import removes the internal recovery copy', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_state_repair',
+      'fantextviewer_state_repair',
     );
     addTearDown(() => directory.delete(recursive: true));
     final stateFile = File(
@@ -557,7 +565,7 @@ void main() {
 
   test('rediscovers the latest broken state file after restart', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_state_restart',
+      'fantextviewer_state_restart',
     );
     addTearDown(() => directory.delete(recursive: true));
     final stateFile = File(
@@ -579,7 +587,7 @@ void main() {
 
   test('invalid state import preserves the current state', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_state_import_invalid',
+      'fantextviewer_state_import_invalid',
     );
     addTearDown(() => directory.delete(recursive: true));
     final invalid = File(
@@ -599,7 +607,9 @@ void main() {
   });
 
   test('손상된 저장 파일을 보존하고 기본값으로 복구한다', () async {
-    final directory = await Directory.systemTemp.createTemp('geulbom_broken');
+    final directory = await Directory.systemTemp.createTemp(
+      'fantextviewer_broken',
+    );
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}${Platform.pathSeparator}state.json');
     await file.writeAsString('{broken');

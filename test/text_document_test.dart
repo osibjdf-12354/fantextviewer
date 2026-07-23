@@ -6,7 +6,7 @@ import 'dart:typed_data';
 import 'package:characters/characters.dart' as characters;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/text_document.dart';
+import 'package:fantextviewer/text_document.dart';
 
 void main() {
   test(
@@ -26,7 +26,9 @@ void main() {
   test(
     'loads a large UTF-8 file while the root event loop stays responsive',
     () async {
-      final directory = await Directory.systemTemp.createTemp('geulbom_decode');
+      final directory = await Directory.systemTemp.createTemp(
+        'fantextviewer_decode',
+      );
       addTearDown(() => directory.delete(recursive: true));
       final file = File('${directory.path}${Platform.pathSeparator}large.txt');
       await file.writeAsString(List.filled(4 * 1024 * 1024, '가').join());
@@ -68,7 +70,9 @@ void main() {
   });
 
   test('rejects an oversized file before decoding it', () async {
-    final directory = await Directory.systemTemp.createTemp('geulbom_limit');
+    final directory = await Directory.systemTemp.createTemp(
+      'fantextviewer_limit',
+    );
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}${Platform.pathSeparator}large.txt');
     await file.writeAsBytes(List<int>.filled(17, 0x61));
@@ -85,7 +89,7 @@ void main() {
 
   test('bounds whole-file decoding for UTF-16 and CP949', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_decode_limit',
+      'fantextviewer_decode_limit',
     );
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}${Platform.pathSeparator}legacy.txt');
@@ -104,7 +108,7 @@ void main() {
 
   test('Android CP949 decoding obeys the whole-file byte cap', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_android_cp949_limit',
+      'fantextviewer_android_cp949_limit',
     );
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}${Platform.pathSeparator}legacy.txt');
@@ -130,7 +134,7 @@ void main() {
 
   test('UTF-16 file decoding streams beyond the whole-file byte cap', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_utf16_stream',
+      'fantextviewer_utf16_stream',
     );
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}${Platform.pathSeparator}utf16.txt');

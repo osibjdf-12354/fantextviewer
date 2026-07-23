@@ -1,4 +1,4 @@
-package com.songs.geulbom
+package com.songs.fantextviewer
 
 import android.content.Context
 import android.content.Intent
@@ -26,7 +26,7 @@ class FolderPickerTest {
         device.executeShellCommand(
             "appops set --uid ${context.packageName} MANAGE_EXTERNAL_STORAGE allow",
         )
-        val folder = File("/storage/emulated/0/Download/GeulbomSmoke")
+        val folder = File("/storage/emulated/0/Download/FanTextViewerSmoke")
         assertTrue("Could not create $folder", folder.mkdirs() || folder.isDirectory)
         writePattern(
             File(folder, "cp949-5mb.txt"),
@@ -40,11 +40,11 @@ class FolderPickerTest {
         )
         device.executeShellCommand(
             "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE " +
-                "-d file:///sdcard/Download/GeulbomSmoke/cp949-5mb.txt",
+                "-d file:///sdcard/Download/FanTextViewerSmoke/cp949-5mb.txt",
         )
         device.executeShellCommand(
             "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE " +
-                "-d file:///sdcard/Download/GeulbomSmoke/utf8-20mb.txt",
+                "-d file:///sdcard/Download/FanTextViewerSmoke/utf8-20mb.txt",
         )
         context.startActivity(
             checkNotNull(context.packageManager.getLaunchIntentForPackage(context.packageName))
@@ -72,7 +72,7 @@ class FolderPickerTest {
 
         var folder =
             device.wait(
-                Until.findObject(documentItem(Pattern.compile("GeulbomSmoke"))),
+                Until.findObject(documentItem(Pattern.compile("FanTextViewerSmoke"))),
                 3_000,
             )
         if (folder == null) {
@@ -88,7 +88,7 @@ class FolderPickerTest {
                 downloads = find(documentItem(Pattern.compile("(?i)downloads?")))
             }
             downloads.click()
-            folder = find(documentItem(Pattern.compile("GeulbomSmoke")))
+            folder = find(documentItem(Pattern.compile("FanTextViewerSmoke")))
         }
         folder.click()
         val useFolder =

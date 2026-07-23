@@ -3,12 +3,12 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/app_store.dart';
-import 'package:geulbom/models.dart';
-import 'package:geulbom/reader_controller.dart';
-import 'package:geulbom/reader_pagination_coordinator.dart';
-import 'package:geulbom/text_document.dart';
-import 'package:geulbom/text_paginator.dart';
+import 'package:fantextviewer/app_store.dart';
+import 'package:fantextviewer/models.dart';
+import 'package:fantextviewer/reader_controller.dart';
+import 'package:fantextviewer/reader_pagination_coordinator.dart';
+import 'package:fantextviewer/text_document.dart';
+import 'package:fantextviewer/text_paginator.dart';
 
 void main() {
   testWidgets(

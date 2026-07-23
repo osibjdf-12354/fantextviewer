@@ -1,4 +1,4 @@
-package com.songs.geulbom
+package com.songs.fantextviewer
 
 import java.io.ByteArrayInputStream
 import java.io.File

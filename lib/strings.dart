@@ -7,7 +7,7 @@ abstract final class AppStrings {
   static const exportRecoveryFile = '복구 파일 내보내기';
   static const stateExportSucceeded = '복구 파일을 내보냈습니다.';
   static const stateImportSucceeded = '저장 상태를 복구했습니다.';
-  static const appName = '글봄';
+  static const appName = '판갤텍뷰';
 
   static const cancel = '취소';
   static const delete = '삭제';

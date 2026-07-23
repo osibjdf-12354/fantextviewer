@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/page_index_cache.dart';
-import 'package:geulbom/text_paginator.dart';
+import 'package:fantextviewer/page_index_cache.dart';
+import 'package:fantextviewer/text_paginator.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -14,7 +14,9 @@ void main() {
   late PageIndexCache cache;
 
   setUp(() async {
-    directory = await Directory.systemTemp.createTemp('geulbom_page_cache');
+    directory = await Directory.systemTemp.createTemp(
+      'fantextviewer_page_cache',
+    );
     cache = PageIndexCache(directory: directory);
   });
 

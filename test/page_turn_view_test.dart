@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/models.dart';
-import 'package:geulbom/page_turn_view.dart';
+import 'package:fantextviewer/models.dart';
+import 'package:fantextviewer/page_turn_view.dart';
 
 void main() {
   testWidgets('horizontal mode turns only on horizontal drag', (tester) async {

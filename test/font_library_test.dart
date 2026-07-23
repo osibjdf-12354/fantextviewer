@@ -1,13 +1,13 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/font_library.dart';
+import 'package:fantextviewer/font_library.dart';
 
 void main() {
   test(
     'copies TTF files, preserves duplicate names, and deletes only the copy',
     () async {
-      final root = await Directory.systemTemp.createTemp('geulbom_fonts');
+      final root = await Directory.systemTemp.createTemp('fantextviewer_fonts');
       addTearDown(() => root.delete(recursive: true));
       final source = File('${root.path}${Platform.pathSeparator}Nanum.ttf');
       await source.writeAsBytes(_validTtfBytes);
@@ -47,7 +47,9 @@ void main() {
   test(
     'rejects unsupported extensions and removes copies when registration fails',
     () async {
-      final root = await Directory.systemTemp.createTemp('geulbom_bad_font');
+      final root = await Directory.systemTemp.createTemp(
+        'fantextviewer_bad_font',
+      );
       addTearDown(() => root.delete(recursive: true));
       final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
       final text = File('${root.path}${Platform.pathSeparator}font.txt');
@@ -73,7 +75,9 @@ void main() {
   );
 
   test('removes a partial copy and preserves the copy error', () async {
-    final root = await Directory.systemTemp.createTemp('geulbom_partial_font');
+    final root = await Directory.systemTemp.createTemp(
+      'fantextviewer_partial_font',
+    );
     addTearDown(() => root.delete(recursive: true));
     final source = File('${root.path}${Platform.pathSeparator}partial.ttf');
     await source.writeAsBytes(_validTtfBytes);
@@ -100,7 +104,7 @@ void main() {
     'loadSelected returns false for a missing or unloadable saved font',
     () async {
       final root = await Directory.systemTemp.createTemp(
-        'geulbom_restore_font',
+        'fantextviewer_restore_font',
       );
       addTearDown(() => root.delete(recursive: true));
       final library = FontLibrary(
@@ -119,7 +123,9 @@ void main() {
   );
 
   test('rejects oversized and invalid SFNT files before copying', () async {
-    final root = await Directory.systemTemp.createTemp('geulbom_font_limits');
+    final root = await Directory.systemTemp.createTemp(
+      'fantextviewer_font_limits',
+    );
     addTearDown(() => root.delete(recursive: true));
     final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
     final invalid = File('${root.path}${Platform.pathSeparator}invalid.ttf');
@@ -160,7 +166,9 @@ void main() {
   });
 
   test('lists only files with valid SFNT headers', () async {
-    final root = await Directory.systemTemp.createTemp('geulbom_font_headers');
+    final root = await Directory.systemTemp.createTemp(
+      'fantextviewer_font_headers',
+    );
     addTearDown(() => root.delete(recursive: true));
     final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
     await fonts.create();

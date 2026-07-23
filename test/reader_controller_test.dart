@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/app_store.dart';
-import 'package:geulbom/models.dart';
-import 'package:geulbom/reader_controller.dart';
+import 'package:fantextviewer/app_store.dart';
+import 'package:fantextviewer/models.dart';
+import 'package:fantextviewer/reader_controller.dart';
 
 void main() {
   test('owns and clamps reader settings and position', () {
@@ -36,7 +36,7 @@ void main() {
 
   test('debounces changes and flush persists the latest snapshot', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_controller',
+      'fantextviewer_controller',
     );
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}${Platform.pathSeparator}state.json');

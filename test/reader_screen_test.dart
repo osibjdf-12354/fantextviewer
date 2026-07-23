@@ -7,16 +7,16 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/app_store.dart';
-import 'package:geulbom/font_library.dart';
-import 'package:geulbom/models.dart';
-import 'package:geulbom/page_index_cache.dart';
-import 'package:geulbom/page_turn_view.dart';
-import 'package:geulbom/reader_controller.dart';
-import 'package:geulbom/reader_screen.dart';
-import 'package:geulbom/strings.dart';
-import 'package:geulbom/text_document.dart';
-import 'package:geulbom/text_paginator.dart';
+import 'package:fantextviewer/app_store.dart';
+import 'package:fantextviewer/font_library.dart';
+import 'package:fantextviewer/models.dart';
+import 'package:fantextviewer/page_index_cache.dart';
+import 'package:fantextviewer/page_turn_view.dart';
+import 'package:fantextviewer/reader_controller.dart';
+import 'package:fantextviewer/reader_screen.dart';
+import 'package:fantextviewer/strings.dart';
+import 'package:fantextviewer/text_document.dart';
+import 'package:fantextviewer/text_paginator.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 final _longText = List.filled(300, '가나다라마바사아자차카타파하\n').join();
@@ -207,7 +207,7 @@ void main() {
 
   testWidgets('같은 파일명의 글꼴이 바뀌면 새 페이지 캐시 서명을 사용한다', (tester) async {
     final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_font_version'),
+      () => Directory.systemTemp.createTemp('fantextviewer_font_version'),
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
@@ -2777,7 +2777,7 @@ void main() {
 
   testWidgets('표시 설정에서 로컬 글꼴을 가져와 미리보기와 본문에 적용한다', (tester) async {
     final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_font_ui'),
+      () => Directory.systemTemp.createTemp('fantextviewer_font_ui'),
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}나눔명조.ttf');
@@ -2840,7 +2840,7 @@ void main() {
 
   testWidgets('지원하지 않는 글꼴 파일은 한국어 오류를 표시한다', (tester) async {
     final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_bad_font_ui'),
+      () => Directory.systemTemp.createTemp('fantextviewer_bad_font_ui'),
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}font.txt');
@@ -2876,7 +2876,7 @@ void main() {
 
   testWidgets('글꼴 선택기 오류는 한국어 가져오기 오류를 표시한다', (tester) async {
     final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_picker_error_ui'),
+      () => Directory.systemTemp.createTemp('fantextviewer_picker_error_ui'),
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final library = FontLibrary(
@@ -2910,7 +2910,7 @@ void main() {
   testWidgets('가져온 글꼴을 확인 후 삭제하고 시스템 기본값으로 복구한다', (tester) async {
     _mockWakelock(tester);
     final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_delete_font_ui'),
+      () => Directory.systemTemp.createTemp('fantextviewer_delete_font_ui'),
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}고딕.otf');
@@ -2957,7 +2957,8 @@ void main() {
   testWidgets('초안에서만 선택한 글꼴 삭제도 저장 설정을 기본값으로 복구한다', (tester) async {
     _mockWakelock(tester);
     final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_delete_draft_font_ui'),
+      () =>
+          Directory.systemTemp.createTemp('fantextviewer_delete_draft_font_ui'),
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final savedSource = File('${root.path}${Platform.pathSeparator}saved.otf');
@@ -3031,7 +3032,7 @@ void main() {
   testWidgets('선택 글꼴 삭제 중 설정창을 닫아도 기본값을 즉시 저장한다', (tester) async {
     _mockWakelock(tester);
     final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_delayed_delete_ui'),
+      () => Directory.systemTemp.createTemp('fantextviewer_delayed_delete_ui'),
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}명조.otf');
@@ -3073,7 +3074,7 @@ void main() {
   testWidgets('글꼴 삭제 중 바뀐 최신 표시 설정과 글꼴을 보존한다', (tester) async {
     _mockWakelock(tester);
     final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_delete_race_ui'),
+      () => Directory.systemTemp.createTemp('fantextviewer_delete_race_ui'),
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}old.otf');
@@ -3140,7 +3141,8 @@ void main() {
   testWidgets('글꼴 삭제 후 설정 저장 실패는 삭제 성공과 구분해 안내한다', (tester) async {
     _mockWakelock(tester);
     final root = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_delete_save_error_ui'),
+      () =>
+          Directory.systemTemp.createTemp('fantextviewer_delete_save_error_ui'),
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}고딕.otf');
@@ -3183,7 +3185,9 @@ void main() {
     tester,
   ) async {
     final directory = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_reader_decode_failure'),
+      () => Directory.systemTemp.createTemp(
+        'fantextviewer_reader_decode_failure',
+      ),
     ))!;
     addTearDown(() => tester.runAsync(() => directory.delete(recursive: true)));
     final file = File('${directory.path}${Platform.pathSeparator}novel.txt');
@@ -3229,7 +3233,9 @@ void main() {
     tester,
   ) async {
     final directory = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_reader_content_change'),
+      () => Directory.systemTemp.createTemp(
+        'fantextviewer_reader_content_change',
+      ),
     ))!;
     addTearDown(() => tester.runAsync(() => directory.delete(recursive: true)));
     final file = File('${directory.path}${Platform.pathSeparator}novel.txt');
@@ -3278,7 +3284,8 @@ void main() {
     tester,
   ) async {
     final directory = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_reader_save_failure'),
+      () =>
+          Directory.systemTemp.createTemp('fantextviewer_reader_save_failure'),
     ))!;
     addTearDown(() => tester.runAsync(() => directory.delete(recursive: true)));
     final file = File('${directory.path}${Platform.pathSeparator}novel.txt');
@@ -3312,7 +3319,9 @@ void main() {
   ) async {
     _mockWakelock(tester);
     final directory = (await tester.runAsync(
-      () => Directory.systemTemp.createTemp('geulbom_reader_encoding_failure'),
+      () => Directory.systemTemp.createTemp(
+        'fantextviewer_reader_encoding_failure',
+      ),
     ))!;
     addTearDown(() => tester.runAsync(() => directory.delete(recursive: true)));
     final file = File('${directory.path}${Platform.pathSeparator}novel.txt');

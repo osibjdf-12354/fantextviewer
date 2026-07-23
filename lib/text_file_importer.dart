@@ -6,7 +6,7 @@ import 'package:flutter/services.dart';
 import 'app_store.dart';
 import 'strings.dart';
 
-const _textFileChannel = MethodChannel('com.songs.geulbom/text-file');
+const _textFileChannel = MethodChannel('com.songs.fantextviewer/text-file');
 
 class TextFileImporter {
   TextFileImporter({

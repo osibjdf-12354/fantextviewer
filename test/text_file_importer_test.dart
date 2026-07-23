@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:geulbom/app_store.dart';
-import 'package:geulbom/text_file_importer.dart';
+import 'package:fantextviewer/app_store.dart';
+import 'package:fantextviewer/text_file_importer.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -50,7 +50,7 @@ void main() {
   test('legacy cache imports move their complete saved state once', () async {
     const channel = MethodChannel('test/text-file-promotion');
     final directory = await Directory.systemTemp.createTemp(
-      'geulbom_import_promotion',
+      'fantextviewer_import_promotion',
     );
     addTearDown(() => directory.delete(recursive: true));
     final stateFile = File(
