@@ -53,6 +53,60 @@ void main() {
     );
   });
 
+  test('next page repeats two visually wrapped lines', () async {
+    final text = List.filled(100, '가나다라마바사아자차카타파하').join();
+    const size = Size(120, 120);
+    const style = TextStyle(fontSize: 20, height: 1);
+
+    final pages = await paginateText(text: text, size: size, style: style);
+
+    expect(pages.length, greaterThan(2));
+    for (var index = 1; index < pages.length; index++) {
+      expect(pages[index - 1].end, pages[index].start);
+    }
+    expect(
+      _visualLineCount(
+        text.substring(pages[1].displayStart, pages[1].start),
+        size,
+        style,
+      ),
+      2,
+    );
+  });
+
+  test('window pages use the same two-line overlap', () async {
+    final text = List.filled(100, '가나다라마바사아자차카타파하').join();
+    const size = Size(120, 120);
+    const style = TextStyle(fontSize: 20, height: 1);
+
+    final pages = await paginateTextWindow(
+      text: text,
+      startOffset: 0,
+      size: size,
+      style: style,
+    );
+
+    expect(
+      _visualLineCount(
+        text.substring(pages[1].displayStart, pages[1].start),
+        size,
+        style,
+      ),
+      2,
+    );
+  });
+
+  test('small pages always advance', () async {
+    final pages = await paginateText(
+      text: List.filled(20, '가나다라마바사아자차카타파하').join(),
+      size: const Size(120, 40),
+      style: const TextStyle(fontSize: 20, height: 1),
+    );
+
+    expect(pages, isNotEmpty);
+    expect(pages.every((page) => page.end > page.start), isTrue);
+  });
+
   test('페이지 범위가 원문을 중복 없이 모두 덮는다', () async {
     final text = List.filled(200, '가나다라마바사아자차카타파하 ').join();
 
@@ -315,4 +369,14 @@ void main() {
       expect(distantPages.first.start, insideNewline - 1);
     },
   );
+}
+
+int _visualLineCount(String text, Size size, TextStyle style) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: size.width);
+  final count = painter.computeLineMetrics().length;
+  painter.dispose();
+  return count;
 }

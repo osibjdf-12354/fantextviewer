@@ -8,10 +8,12 @@ typedef PaginationBatchCallback = void Function(List<TextPage> pages);
 typedef TextLayoutCallback = void Function(int characterCount);
 
 class TextPage {
-  const TextPage({required this.start, required this.end});
+  const TextPage({required this.start, required this.end, int? displayStart})
+    : displayStart = displayStart ?? start;
 
   final int start;
   final int end;
+  final int displayStart;
 }
 
 Future<List<TextPage>> paginateText({
@@ -30,14 +32,16 @@ Future<List<TextPage>> paginateText({
   }
 
   final pages = <TextPage>[];
-  var start = 0;
+  var logicalStart = 0;
+  var displayStart = 0;
   var batchStart = 0;
   var probeLength = 4096;
-  while (start < text.length) {
+  while (logicalStart < text.length) {
     if (isCancelled?.call() == true) break;
-    final end = _nextPageEnd(
+    final boundary = _nextPageBoundary(
       text,
-      start,
+      logicalStart,
+      displayStart,
       size,
       style,
       paragraphIndent,
@@ -45,20 +49,27 @@ Future<List<TextPage>> paginateText({
       onLayout,
       isCancelled,
     );
-    if (end == null) break;
-    pages.add(TextPage(start: start, end: end));
-    probeLength = ((end - start) * 1.25).ceil();
-    start = end;
+    if (boundary == null) break;
+    pages.add(
+      TextPage(
+        start: logicalStart,
+        end: boundary.end,
+        displayStart: displayStart,
+      ),
+    );
+    probeLength = ((boundary.end - displayStart) * 1.25).ceil();
+    logicalStart = boundary.end;
+    displayStart = boundary.nextDisplayStart;
     if (pages.length - batchStart == 8) {
       onBatch?.call(pages.sublist(batchStart));
       batchStart = pages.length;
-      onProgress?.call(start / text.length);
+      onProgress?.call(logicalStart / text.length);
     }
     if (pages.length.isEven) await Future<void>.delayed(Duration.zero);
   }
   if (batchStart < pages.length) {
     onBatch?.call(pages.sublist(batchStart));
-    onProgress?.call(start / text.length);
+    onProgress?.call(logicalStart / text.length);
   }
   return pages;
 }
@@ -79,21 +90,23 @@ Future<List<TextPage>> paginateTextWindow({
   }
   if (maxPages < 1) throw ArgumentError.value(maxPages, 'maxPages');
 
-  var start = startOffset.clamp(0, text.length - 1);
-  if (_splitsSurrogatePair(text, start)) start--;
-  if (start > 0) {
-    final lowerBound = math.max(0, start - 4096);
-    final newline = text.substring(lowerBound, start).lastIndexOf('\n');
-    if (newline >= 0) start = lowerBound + newline + 1;
+  var logicalStart = startOffset.clamp(0, text.length - 1);
+  if (_splitsSurrogatePair(text, logicalStart)) logicalStart--;
+  if (logicalStart > 0) {
+    final lowerBound = math.max(0, logicalStart - 4096);
+    final newline = text.substring(lowerBound, logicalStart).lastIndexOf('\n');
+    if (newline >= 0) logicalStart = lowerBound + newline + 1;
   }
 
   final pages = <TextPage>[];
+  var displayStart = logicalStart;
   var probeLength = 4096;
-  while (start < text.length && pages.length < maxPages) {
+  while (logicalStart < text.length && pages.length < maxPages) {
     if (isCancelled?.call() == true) break;
-    final end = _nextPageEnd(
+    final boundary = _nextPageBoundary(
       text,
-      start,
+      logicalStart,
+      displayStart,
       size,
       style,
       paragraphIndent,
@@ -101,10 +114,17 @@ Future<List<TextPage>> paginateTextWindow({
       onLayout,
       isCancelled,
     );
-    if (end == null) break;
-    pages.add(TextPage(start: start, end: end));
-    probeLength = ((end - start) * 1.25).ceil();
-    start = end;
+    if (boundary == null) break;
+    pages.add(
+      TextPage(
+        start: logicalStart,
+        end: boundary.end,
+        displayStart: displayStart,
+      ),
+    );
+    probeLength = ((boundary.end - displayStart) * 1.25).ceil();
+    logicalStart = boundary.end;
+    displayStart = boundary.nextDisplayStart;
     if (pages.length.isEven) await Future<void>.delayed(Duration.zero);
   }
   return pages;
@@ -155,9 +175,12 @@ int pageForOffset(List<TextPage> pages, int offset) {
   return low.clamp(0, pages.length - 1);
 }
 
-int? _nextPageEnd(
+typedef _PageBoundary = ({int end, int nextDisplayStart});
+
+_PageBoundary? _nextPageBoundary(
   String text,
-  int start,
+  int logicalStart,
+  int displayStart,
   Size size,
   TextStyle style,
   int paragraphIndent,
@@ -165,17 +188,20 @@ int? _nextPageEnd(
   TextLayoutCallback? onLayout,
   bool Function()? isCancelled,
 ) {
-  var candidateEnd = math.min(start + probeLength, text.length);
+  var candidateEnd = math.min(
+    math.max(logicalStart + 1, displayStart + probeLength),
+    text.length,
+  );
   late TextPainter painter;
   late IndentedText formatted;
   while (true) {
     formatted = formatParagraphIndentation(
       text,
-      start: start,
+      start: displayStart,
       end: candidateEnd,
       paragraphIndent: paragraphIndent,
     );
-    onLayout?.call(candidateEnd - start);
+    onLayout?.call(candidateEnd - displayStart);
     painter = _layout(formatted.text, size.width, style);
     if (isCancelled?.call() == true) {
       painter.dispose();
@@ -183,12 +209,15 @@ int? _nextPageEnd(
     }
     if (painter.height > size.height || candidateEnd == text.length) break;
     painter.dispose();
-    candidateEnd = math.min(start + (candidateEnd - start) * 2, text.length);
+    candidateEnd = math.min(
+      displayStart + (candidateEnd - displayStart) * 2,
+      text.length,
+    );
   }
 
   if (painter.height <= size.height) {
     painter.dispose();
-    return candidateEnd;
+    return (end: candidateEnd, nextDisplayStart: candidateEnd);
   }
 
   final displayOffset = painter
@@ -196,14 +225,39 @@ int? _nextPageEnd(
       .offset
       .clamp(1, formatted.text.length)
       .toInt();
-  painter.dispose();
-
   var end = formatted.sourceOffsetAt(displayOffset);
   if (_splitsSurrogatePair(text, end)) {
-    end = end - start > 1 ? end - 1 : end + 1;
+    end = end - logicalStart > 1 ? end - 1 : end + 1;
   }
   if (end < text.length && text.codeUnitAt(end) == 0x0a) end++;
-  return end.clamp(start + 1, text.length);
+  end = end.clamp(logicalStart + 1, text.length);
+  final nextDisplayStart = _overlapSourceStart(
+    formatted,
+    painter,
+    displayOffset,
+    logicalStart,
+    end,
+  );
+  painter.dispose();
+  return (end: end, nextDisplayStart: nextDisplayStart);
+}
+
+int _overlapSourceStart(
+  IndentedText formatted,
+  TextPainter painter,
+  int displayEnd,
+  int logicalStart,
+  int end,
+) {
+  var position = displayEnd;
+  for (var line = 0; line < 2; line++) {
+    final boundary = painter.getLineBoundary(
+      TextPosition(offset: position - 1),
+    );
+    if (boundary.start == 0) break;
+    position = boundary.start;
+  }
+  return formatted.sourceOffsetAt(position).clamp(logicalStart, end).toInt();
 }
 
 TextPainter _layout(String text, double width, TextStyle style) {
