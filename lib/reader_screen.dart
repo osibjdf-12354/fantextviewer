@@ -401,6 +401,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       onJumpToOffset: _jumpToOffset,
       onSetOffset: _setOffset,
       onMessage: _showMessage,
+      onPaginationError: _reportPaginationError,
       onRestartAuto: _restartAutoTimer,
       isActive: () => mounted,
     );
@@ -829,8 +830,16 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         fontFileVersion: widget.fontLibrary?.versionFor(_settings.fontFileName),
       );
     } catch (error, stackTrace) {
-      debugPrint('Page calculation failed: $error\n$stackTrace');
-      if (mounted) setState(() => _paginationError = error);
+      _reportPaginationError(error, stackTrace);
+    }
+  }
+
+  void _reportPaginationError(Object error, StackTrace stackTrace) {
+    debugPrint('Page calculation failed: $error\n$stackTrace');
+    if (!mounted) return;
+    setState(() => _paginationError = error);
+    if (_activeMode == ReadingMode.scroll) {
+      _showMessage(AppStrings.paginationFailed);
     }
   }
 

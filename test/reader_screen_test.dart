@@ -13,6 +13,7 @@ import 'package:fantextviewer/models.dart';
 import 'package:fantextviewer/page_index_cache.dart';
 import 'package:fantextviewer/page_turn_view.dart';
 import 'package:fantextviewer/reader_controller.dart';
+import 'package:fantextviewer/reader_pagination_coordinator.dart';
 import 'package:fantextviewer/reader_screen.dart';
 import 'package:fantextviewer/strings.dart';
 import 'package:fantextviewer/text_document.dart';
@@ -3446,6 +3447,131 @@ void main() {
     );
 
     expect(find.text(AppStrings.paginationFailed), findsNothing);
+  });
+
+  testWidgets('window pagination failure uses the same retry path', (
+    tester,
+  ) async {
+    _mockWakelock(tester);
+    final text = List.filled(
+      ReaderPaginationCoordinator.eagerTextLimit + 1,
+      'a',
+    ).join();
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.page));
+    final completion = Completer<List<TextPage>>();
+    var windowCalls = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView.test(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: text,
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                required paragraphIndent,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) {
+                onBatch?.call(const [TextPage(start: 0, end: 100)]);
+                return completion.future;
+              },
+          windowPaginator:
+              ({
+                required text,
+                required startOffset,
+                required size,
+                required style,
+                required paragraphIndent,
+                onLayout,
+                isCancelled,
+              }) async {
+                windowCalls++;
+                if (windowCalls == 1) {
+                  throw StateError('window pagination failed');
+                }
+                return [TextPage(start: startOffset, end: text.length)];
+              },
+        ),
+      ),
+    );
+    await tester.pump();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('위치 이동'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '50');
+    await tester.tap(find.text('이동'));
+    await _pumpUntil(
+      tester,
+      () => find.byKey(const Key('pagination-retry')).evaluate().isNotEmpty,
+    );
+
+    expect(windowCalls, 1);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byKey(const Key('pagination-retry')));
+    await _pumpUntil(
+      tester,
+      () =>
+          windowCalls == 2 &&
+          find.byType(PageTurnView).evaluate().isNotEmpty &&
+          find.text(AppStrings.paginationFailed).evaluate().isEmpty,
+    );
+
+    completion.complete(const []);
+    await tester.pump();
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+  });
+
+  testWidgets('scroll mode keeps text visible and reports pagination failure', (
+    tester,
+  ) async {
+    _mockWakelock(tester);
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(mode: ReadingMode.scroll));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ReaderView.test(
+          path: '/book.txt',
+          title: 'book.txt',
+          text: 'visible body',
+          encoding: TextEncoding.utf8,
+          store: store,
+          paginator:
+              ({
+                required text,
+                required size,
+                required style,
+                required paragraphIndent,
+                onProgress,
+                onBatch,
+                onLayout,
+                isCancelled,
+              }) async => throw StateError('pagination failed'),
+        ),
+      ),
+    );
+    await _pumpUntil(
+      tester,
+      () => find.text(AppStrings.paginationFailed).evaluate().isNotEmpty,
+    );
+
+    expect(find.textContaining('visible body'), findsWidgets);
+    expect(find.byKey(const Key('pagination-retry')), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
   });
 }
 

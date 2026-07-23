@@ -44,6 +44,9 @@ typedef ReaderWindowPaginator =
       bool Function()? isCancelled,
     });
 
+typedef ReaderPaginationErrorCallback =
+    void Function(Object error, StackTrace stackTrace);
+
 class ReaderPageWindow {
   const ReaderPageWindow({required this.pages, required this.firstPage});
 
@@ -71,6 +74,7 @@ class ReaderPaginationCoordinator {
     required this.onJumpToOffset,
     required this.onSetOffset,
     required this.onMessage,
+    required this.onPaginationError,
     required this.onRestartAuto,
     required this.isActive,
   });
@@ -95,6 +99,7 @@ class ReaderPaginationCoordinator {
   final ValueChanged<int> onJumpToOffset;
   final ValueChanged<int> onSetOffset;
   final ValueChanged<String> onMessage;
+  final ReaderPaginationErrorCallback onPaginationError;
   final VoidCallback onRestartAuto;
   final bool Function() isActive;
 
@@ -429,26 +434,32 @@ class ReaderPaginationCoordinator {
         navigationGeneration != _navigationGeneration;
 
     final currentSettings = settings();
-    var windowPages = await windowPaginator(
-      text: text,
-      startOffset: startOffset,
-      size: size,
-      style: style,
-      paragraphIndent: currentSettings.paragraphIndent,
-      isCancelled: cancelled,
-    );
-    if (cancelled()) return;
-    if (windowPages.isNotEmpty &&
-        targetOffset >= windowPages.last.end &&
-        windowPages.last.end < text.length) {
+    late List<TextPage> windowPages;
+    try {
       windowPages = await windowPaginator(
         text: text,
-        startOffset: targetOffset,
+        startOffset: startOffset,
         size: size,
         style: style,
         paragraphIndent: currentSettings.paragraphIndent,
         isCancelled: cancelled,
       );
+      if (cancelled()) return;
+      if (windowPages.isNotEmpty &&
+          targetOffset >= windowPages.last.end &&
+          windowPages.last.end < text.length) {
+        windowPages = await windowPaginator(
+          text: text,
+          startOffset: targetOffset,
+          size: size,
+          style: style,
+          paragraphIndent: currentSettings.paragraphIndent,
+          isCancelled: cancelled,
+        );
+      }
+    } catch (error, stackTrace) {
+      if (!cancelled()) onPaginationError(error, stackTrace);
+      return;
     }
     if (cancelled() || windowPages.isEmpty) return;
 

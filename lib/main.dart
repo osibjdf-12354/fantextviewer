@@ -71,10 +71,16 @@ class FanTextViewerApp extends StatelessWidget {
 }
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key, required this.store, this.fontLibrary});
+  const HomeScreen({
+    super.key,
+    required this.store,
+    this.fontLibrary,
+    this.textFilePicker = pickTextFile,
+  });
 
   final AppStore store;
   final FontLibrary? fontLibrary;
+  final Future<String?> Function() textFilePicker;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -162,8 +168,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _openSystemPicker() async {
-    final path = await pickTextFile();
-    if (path != null) await _openReader(path);
+    try {
+      final path = await widget.textFilePicker();
+      if (path != null) await _openReader(path);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${AppStrings.textFileImportFailed}\n$error')),
+      );
+    }
   }
 
   @override

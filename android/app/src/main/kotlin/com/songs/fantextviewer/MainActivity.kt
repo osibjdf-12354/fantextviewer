@@ -215,17 +215,12 @@ class MainActivity : FlutterActivity() {
         uri: Uri,
         result: MethodChannel.Result,
     ) {
-        val metadata = documentMetadata(uri)
-        if (metadata.size != null && metadata.size > MAX_IMPORTED_TEXT_BYTES) {
-            result.error(
-                "file_too_large",
-                "Text file exceeds the $MAX_IMPORTED_TEXT_BYTES byte import limit",
-                null,
-            )
-            return
-        }
         fileExecutor.execute {
             try {
+                val metadata = documentMetadata(uri)
+                if (metadata.size != null && metadata.size > MAX_IMPORTED_TEXT_BYTES) {
+                    throw TextFileTooLargeException(MAX_IMPORTED_TEXT_BYTES)
+                }
                 val input =
                     contentResolver.openInputStream(uri)
                         ?: error("The selected document could not be opened")

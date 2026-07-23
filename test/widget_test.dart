@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fantextviewer/app_store.dart';
 import 'package:fantextviewer/font_library.dart';
@@ -74,6 +75,30 @@ void main() {
     expect(find.text('상태 파일 가져오기'), findsOneWidget);
     expect(find.text(AppStrings.exportRecoveryFile), findsOneWidget);
     expect(find.textContaining(store.recoveryFile!.path), findsOneWidget);
+  });
+
+  testWidgets('system text import failure is shown without an uncaught error', (
+    tester,
+  ) async {
+    final store = _MemoryStore();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeScreen(
+          store: store,
+          textFilePicker: () async =>
+              throw PlatformException(code: 'import_failed'),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip(AppStrings.systemFilePicker));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.textContaining(AppStrings.textFileImportFailed),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 }
 

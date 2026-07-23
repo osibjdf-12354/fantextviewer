@@ -70,6 +70,7 @@ void main() {
         onJumpToOffset: (value) => offset = value,
         onSetOffset: (value) => offset = value,
         onMessage: (_) {},
+        onPaginationError: (_, _) {},
         onRestartAuto: () {},
         isActive: () => true,
       );

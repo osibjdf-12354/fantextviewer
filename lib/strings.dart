@@ -18,6 +18,7 @@ abstract final class AppStrings {
   static const unknown = '알 수 없음';
 
   static const textFile = '텍스트 파일';
+  static const textFileImportFailed = '텍스트 파일을 가져오지 못했습니다.';
   static const fontFile = '글꼴 파일';
   static const fileBrowser = '파일 탐색기';
   static const chooseFolder = '폴더 선택';
