@@ -96,6 +96,26 @@ void main() {
     );
   });
 
+  test('page boundaries include only fully visible lines', () async {
+    final text = List.filled(100, 'boundary text ').join();
+    const size = Size(120, 135);
+    const style = TextStyle(fontSize: 20, height: 1.5);
+
+    final pages = await paginateText(text: text, size: size, style: style);
+
+    expect(pages.length, greaterThan(2));
+    for (final page in pages) {
+      expect(
+        _renderedHeight(
+          text.substring(page.displayStart, page.end),
+          size.width,
+          style,
+        ),
+        lessThanOrEqualTo(size.height),
+      );
+    }
+  });
+
   test('small pages always advance', () async {
     final pages = await paginateText(
       text: List.filled(20, '가나다라마바사아자차카타파하').join(),
@@ -379,4 +399,14 @@ int _visualLineCount(String text, Size size, TextStyle style) {
   final count = painter.computeLineMetrics().length;
   painter.dispose();
   return count;
+}
+
+double _renderedHeight(String text, double width, TextStyle style) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: TextDirection.ltr,
+  )..layout(maxWidth: width);
+  final height = painter.height;
+  painter.dispose();
+  return height;
 }

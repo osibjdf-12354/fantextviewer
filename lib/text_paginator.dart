@@ -220,11 +220,15 @@ _PageBoundary? _nextPageBoundary(
     return (end: candidateEnd, nextDisplayStart: candidateEnd);
   }
 
-  final displayOffset = painter
-      .getPositionForOffset(Offset(size.width, math.max(0, size.height - .1)))
-      .offset
-      .clamp(1, formatted.text.length)
-      .toInt();
+  final displayOffset =
+      _lastFullyVisibleLineEnd(painter, size.height) ??
+      painter
+          .getPositionForOffset(
+            Offset(size.width, math.max(0, size.height - .1)),
+          )
+          .offset
+          .clamp(1, formatted.text.length)
+          .toInt();
   var end = formatted.sourceOffsetAt(displayOffset);
   if (_splitsSurrogatePair(text, end)) {
     end = end - logicalStart > 1 ? end - 1 : end + 1;
@@ -258,6 +262,22 @@ int _overlapSourceStart(
     position = boundary.start;
   }
   return formatted.sourceOffsetAt(position).clamp(logicalStart, end).toInt();
+}
+
+int? _lastFullyVisibleLineEnd(TextPainter painter, double height) {
+  final lines = painter.computeLineMetrics();
+  var lastVisibleLine = -1;
+  for (var index = 0; index < lines.length; index++) {
+    if (lines[index].baseline + lines[index].descent > height) break;
+    lastVisibleLine = index;
+  }
+  if (lastVisibleLine < 0) return null;
+
+  final line = lines[lastVisibleLine];
+  final position = painter.getPositionForOffset(
+    Offset(line.left, line.baseline),
+  );
+  return painter.getLineBoundary(position).end;
 }
 
 TextPainter _layout(String text, double width, TextStyle style) {

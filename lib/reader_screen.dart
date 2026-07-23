@@ -640,7 +640,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
 
   void _ensurePages(Size size) {
     final key = jsonEncode({
-      'algorithm': 5,
+      'algorithm': 6,
       'path': widget.path,
       'fileSize': widget.fileSize,
       'modified': widget.modified?.toUtc().toIso8601String(),
