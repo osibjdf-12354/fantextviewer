@@ -582,7 +582,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                 child: SelectableText(
                   formatParagraphIndentation(
                     widget.text,
-                    start: page.start,
+                    start: page.displayStart,
                     end: page.end,
                     paragraphIndent: _settings.paragraphIndent,
                   ).text,
@@ -622,7 +622,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
 
   void _ensurePages(Size size) {
     final key = jsonEncode({
-      'algorithm': 4,
+      'algorithm': 5,
       'path': widget.path,
       'fileSize': widget.fileSize,
       'modified': widget.modified?.toUtc().toIso8601String(),

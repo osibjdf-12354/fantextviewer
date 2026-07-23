@@ -433,13 +433,13 @@ void main() {
     }
   });
 
-  testWidgets('reader applies vertical page turns to document progress', (
+  testWidgets('page rendering repeats overlap without moving progress', (
     tester,
   ) async {
     const text = 'firstsecondthird';
     const pages = [
       TextPage(start: 0, end: 5),
-      TextPage(start: 5, end: 11),
+      TextPage(start: 5, end: 11, displayStart: 0),
       TextPage(start: 11, end: 16),
     ];
     final store = _MemoryStore()
@@ -480,7 +480,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(store.document('/book.txt').offset, 5);
-    expect(find.text('second'), findsOneWidget);
+    expect(find.text('firstsecond'), findsOneWidget);
   });
 
   testWidgets('tap reading mode ignores swipes and advances by tap', (
