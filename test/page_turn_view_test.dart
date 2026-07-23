@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -234,6 +236,71 @@ void main() {
 
     expect(page.value, 1);
     expect(selections.any((selection) => !selection.isCollapsed), isTrue);
+  });
+
+  testWidgets('programmatic next page uses the requested vertical axis', (
+    tester,
+  ) async {
+    final key = GlobalKey<PageTurnViewState>();
+    final page = ValueNotifier(0);
+    addTearDown(page.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: ValueListenableBuilder<int>(
+          valueListenable: page,
+          builder: (context, index, _) => PageTurnView(
+            key: key,
+            index: index,
+            itemCount: 3,
+            direction: PageTurnDirection.horizontal,
+            onPageChanged: (value) => page.value = value,
+            itemBuilder: (_, itemIndex) => Text('page $itemIndex'),
+          ),
+        ),
+      ),
+    );
+
+    unawaited(key.currentState!.animateNext(Axis.vertical));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 90));
+    final translations = tester
+        .widgetList<Transform>(find.byType(Transform))
+        .map((widget) => widget.transform.getTranslation());
+    expect(
+      translations.any(
+        (translation) => translation.x == 0 && translation.y.abs() > 0,
+      ),
+      isTrue,
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(page.value, 1);
+  });
+
+  testWidgets('reports pointer interaction boundaries once', (tester) async {
+    var starts = 0;
+    var ends = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PageTurnView(
+          index: 0,
+          itemCount: 2,
+          direction: PageTurnDirection.vertical,
+          onInteractionStart: () => starts++,
+          onInteractionEnd: () => ends++,
+          onPageChanged: (_) {},
+          itemBuilder: (_, index) => Text('page $index'),
+        ),
+      ),
+    );
+
+    final gesture = await tester.startGesture(
+      tester.getCenter(find.byType(PageTurnView)),
+    );
+    expect(starts, 1);
+    await gesture.up();
+    await tester.pump();
+    expect(ends, 1);
   });
 }
 

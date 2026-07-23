@@ -12,6 +12,8 @@ class PageTurnView extends StatefulWidget {
     required this.itemCount,
     required this.direction,
     this.tapOnly = false,
+    this.onInteractionStart,
+    this.onInteractionEnd,
     required this.onPageChanged,
     required this.itemBuilder,
   });
@@ -20,14 +22,16 @@ class PageTurnView extends StatefulWidget {
   final int itemCount;
   final PageTurnDirection direction;
   final bool tapOnly;
+  final VoidCallback? onInteractionStart;
+  final VoidCallback? onInteractionEnd;
   final ValueChanged<int> onPageChanged;
   final IndexedWidgetBuilder itemBuilder;
 
   @override
-  State<PageTurnView> createState() => _PageTurnViewState();
+  PageTurnViewState createState() => PageTurnViewState();
 }
 
-class _PageTurnViewState extends State<PageTurnView>
+class PageTurnViewState extends State<PageTurnView>
     with SingleTickerProviderStateMixin {
   late final AnimationController _progress = AnimationController(
     vsync: this,
@@ -73,7 +77,16 @@ class _PageTurnViewState extends State<PageTurnView>
     _cancelled = false;
   }
 
+  Future<bool> animateNext(Axis axis) async {
+    if (_progress.isAnimating || !_canTurn(1)) return false;
+    await _animateTurn(1, axis);
+    return true;
+  }
+
+  void cancelTurn() => _resetInteraction();
+
   void _handleDown(PointerDownEvent event) {
+    if (_activePointers.isEmpty) widget.onInteractionStart?.call();
     _activePointers.add(event.pointer);
     if (_activePointers.length > 1) {
       _cancelled = true;
@@ -127,6 +140,7 @@ class _PageTurnViewState extends State<PageTurnView>
 
   void _handleUp(PointerUpEvent event) {
     _activePointers.remove(event.pointer);
+    _notifyInteractionEnd();
     if (event.pointer != _pointer) {
       if (_activePointers.isEmpty) _cancelled = false;
       return;
@@ -174,6 +188,7 @@ class _PageTurnViewState extends State<PageTurnView>
 
   void _handleCancel(PointerCancelEvent event) {
     _activePointers.remove(event.pointer);
+    _notifyInteractionEnd();
     if (event.pointer != _pointer) {
       if (_activePointers.isEmpty) _cancelled = false;
       return;
@@ -183,6 +198,10 @@ class _PageTurnViewState extends State<PageTurnView>
     _velocityTracker = null;
     if (_activePointers.isEmpty) _cancelled = false;
     unawaited(_animateBack());
+  }
+
+  void _notifyInteractionEnd() {
+    if (_activePointers.isEmpty) widget.onInteractionEnd?.call();
   }
 
   Axis? _chooseAxis(Offset delta) {
