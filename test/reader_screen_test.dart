@@ -109,7 +109,14 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester
-            .widget<SelectableText>(find.byType(SelectableText))
+            .widget<Text>(
+              find
+                  .descendant(
+                    of: find.byKey(const Key('scroll-selection-area')),
+                    matching: find.byType(Text),
+                  )
+                  .first,
+            )
             .style
             ?.fontFamily,
         fontFamilyFor(fileName),
@@ -207,9 +214,7 @@ void main() {
             find.descendant(
               of: find.byKey(const Key('page-content-0')),
               matching: find.byWidgetPredicate(
-                (widget) =>
-                    widget is Text &&
-                    widget.data == '　　첫 문단\n　　둘째 문단',
+                (widget) => widget is Text && widget.data == '　　첫 문단\n　　둘째 문단',
               ),
             ),
           )
@@ -240,7 +245,16 @@ void main() {
 
     expect(store.data.settings.paragraphIndent, 2);
     expect(
-      tester.widget<SelectableText>(find.byType(SelectableText)).data,
+      tester
+          .widget<Text>(
+            find
+                .descendant(
+                  of: find.byKey(const Key('scroll-selection-area')),
+                  matching: find.byType(Text),
+                )
+                .first,
+          )
+          .data,
       '　　첫 문단\n　　둘째 문단',
     );
   });
@@ -1039,8 +1053,8 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('스크롤 본문은 여러 청크의 무개행 원문에도 줄바꿈을 만들지 않는다', (tester) async {
-    final text = List.filled(1500, '가').join();
+  testWidgets('스크롤 본문은 여러 청크를 하나의 선택 영역으로 묶는다', (tester) async {
+    final text = List.filled(70 * 1024, '가').join();
     final pages = <TextPage>[
       for (var start = 0; start < text.length; start += 50)
         TextPage(start: start, end: math.min(start + 50, text.length)),
@@ -1070,7 +1084,69 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(text), findsOneWidget);
+    final selectionArea = find.byKey(const Key('scroll-selection-area'));
+    expect(selectionArea, findsOneWidget);
+    expect(
+      find.descendant(of: selectionArea, matching: find.byType(Text)),
+      findsWidgets,
+    );
+    expect(
+      find.descendant(of: selectionArea, matching: find.byType(SelectableText)),
+      findsNothing,
+    );
+  });
+
+  testWidgets('스크롤 위치는 보이는 청크의 화면 정렬값까지 복원한다', (tester) async {
+    final text = List.filled(40 * 1024, '가').join();
+    final store = _MemoryStore();
+    await tester.binding.setSurfaceSize(const Size(320, 568));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    Widget buildReader(Key key) => MaterialApp(
+      home: ReaderView(
+        key: key,
+        path: '/book.txt',
+        title: 'book.txt',
+        text: text,
+        encoding: TextEncoding.utf8,
+        store: store,
+        paginator:
+            ({
+              required text,
+              required size,
+              required style,
+              required paragraphIndent,
+              onProgress,
+              onBatch,
+              onLayout,
+              isCancelled,
+            }) async => [TextPage(start: 0, end: text.length)],
+      ),
+    );
+
+    await tester.pumpWidget(buildReader(const ValueKey('first')));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byType(ScrollablePositionedList),
+      const Offset(0, -350),
+    );
+    await tester.pumpAndSettle();
+
+    final saved = store.document('/book.txt');
+    expect(saved.offset, greaterThan(0));
+    expect(saved.scrollAlignment, greaterThan(0));
+    expect(saved.scrollAlignment, lessThan(1));
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump();
+    await tester.pumpWidget(buildReader(const ValueKey('restored')));
+    await tester.pumpAndSettle();
+
+    final restoredList = tester.widget<ScrollablePositionedList>(
+      find.byType(ScrollablePositionedList),
+    );
+    expect(restoredList.initialScrollIndex, greaterThan(0));
+    expect(restoredList.initialAlignment, closeTo(saved.scrollAlignment, .01));
   });
 
   testWidgets('대기 중 사용자가 스크롤하면 오래된 페이지 이동을 취소한다', (tester) async {
@@ -2507,7 +2583,14 @@ void main() {
     expect(store.data.settings.fontFileName, '나눔명조.ttf');
     expect(
       tester
-          .widget<SelectableText>(find.byType(SelectableText))
+          .widget<Text>(
+            find
+                .descendant(
+                  of: find.byKey(const Key('scroll-selection-area')),
+                  matching: find.byType(Text),
+                )
+                .first,
+          )
           .style
           ?.fontFamily,
       fontFamilyFor('나눔명조.ttf'),

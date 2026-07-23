@@ -265,6 +265,11 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   int _paginationGeneration = 0;
   bool _paginationComplete = false;
   bool _allowPop = false;
+  String? _scrollChunkLayoutKey;
+  String? _pendingScrollChunkLayoutKey;
+  int _scrollChunkGeneration = 0;
+  bool _scrollPositionsReady = false;
+  bool _scrollPositionChanged = false;
 
   ReaderSettings get _settings => _controller.settings;
   int get _offset => _controller.offset;
@@ -438,6 +443,9 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                           math.max(1, constraints.maxHeight),
                         );
                         _pageSize = pageSize;
+                        if (_activeMode == ReadingMode.scroll) {
+                          _ensureScrollChunks(pageSize);
+                        }
                         _ensurePages(pageSize);
                         return _activeMode == ReadingMode.scroll
                             ? _buildScrollReader()
@@ -521,7 +529,10 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   Widget _buildScrollReader() {
     return Listener(
       onPointerSignal: (event) {
-        if (event is PointerScrollEvent) _invalidateQueuedNavigation();
+        if (event is PointerScrollEvent) {
+          _scrollPositionChanged = true;
+          _invalidateQueuedNavigation();
+        }
       },
       child: NotificationListener<ScrollNotification>(
         onNotification: (notification) {
@@ -530,41 +541,89 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
                   notification.dragDetails != null) ||
               (notification is UserScrollNotification &&
                   notification.direction != ScrollDirection.idle)) {
+            if (_scrollPositionsReady) _scrollPositionChanged = true;
             _invalidateQueuedNavigation();
           }
           return false;
         },
-        child: ScrollablePositionedList.builder(
-          itemCount: _chunks.length,
-          itemScrollController: _itemScrollController,
-          itemPositionsListener: _itemPositionsListener,
-          initialScrollIndex: _chunkForOffset(_offset),
-          initialAlignment: widget.store
-              .document(widget.path)
-              .scrollAlignment
-              .clamp(0, 1),
-          padding: EdgeInsets.fromLTRB(
-            _settings.horizontalPadding,
-            16,
-            _settings.horizontalPadding,
-            0,
+        child: SelectionArea(
+          key: const Key('scroll-selection-area'),
+          child: ScrollablePositionedList.builder(
+            key: ValueKey(_scrollChunkLayoutKey),
+            itemCount: _chunks.length,
+            itemScrollController: _itemScrollController,
+            itemPositionsListener: _itemPositionsListener,
+            initialScrollIndex: _chunkForOffset(_offset),
+            initialAlignment: _controller.scrollAlignment.clamp(0, 1),
+            padding: EdgeInsets.fromLTRB(
+              _settings.horizontalPadding,
+              16,
+              _settings.horizontalPadding,
+              0,
+            ),
+            itemBuilder: (context, index) {
+              final chunk = _chunks[index];
+              return Text(
+                formatParagraphIndentation(
+                  widget.text,
+                  start: chunk.start,
+                  end: chunk.end,
+                  paragraphIndent: _settings.paragraphIndent,
+                ).text,
+                style: _textStyle,
+                textScaler: TextScaler.noScaling,
+              );
+            },
           ),
-          itemBuilder: (context, index) {
-            final chunk = _chunks[index];
-            return SelectableText(
-              formatParagraphIndentation(
-                widget.text,
-                start: chunk.start,
-                end: chunk.end,
-                paragraphIndent: _settings.paragraphIndent,
-              ).text,
-              style: _textStyle,
-              textScaler: TextScaler.noScaling,
-            );
-          },
         ),
       ),
     );
+  }
+
+  void _ensureScrollChunks(Size size) {
+    final style = _textStyle;
+    final key = jsonEncode({
+      'algorithm': 2,
+      'width': size.width,
+      'height': size.height,
+      'fontSize': style.fontSize,
+      'fontFamily': style.fontFamily,
+      'lineHeight': style.height,
+      'paragraphIndent': _settings.paragraphIndent,
+    });
+    if (_scrollChunkLayoutKey == key || _pendingScrollChunkLayoutKey == key) {
+      return;
+    }
+    _pendingScrollChunkLayoutKey = key;
+    final generation = ++_scrollChunkGeneration;
+    final maxChars = math.max(128, _fallbackCharactersPerPage);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          generation != _scrollChunkGeneration ||
+          _pendingScrollChunkLayoutKey != key) {
+        return;
+      }
+      final chunks = splitText(
+        widget.text,
+        maxChars: maxChars,
+        layoutStyle: style,
+        maxWidth: size.width,
+        textDirection: Directionality.of(context),
+      );
+      if (!mounted || generation != _scrollChunkGeneration) return;
+      setState(() {
+        _scrollPositionsReady = false;
+        _scrollPositionChanged = false;
+        _chunks = chunks;
+        _scrollChunkLayoutKey = key;
+        _pendingScrollChunkLayoutKey = null;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && generation == _scrollChunkGeneration) {
+          _scrollPositionsReady = true;
+        }
+      });
+    });
   }
 
   Widget _buildPageReader() {
@@ -819,25 +878,46 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   }
 
   void _recordScrollPosition() {
-    if (_activeMode != ReadingMode.scroll) return;
+    if (_activeMode != ReadingMode.scroll || !_scrollPositionsReady) {
+      return;
+    }
     final visible =
         _itemPositionsListener.itemPositions.value
-            .where((position) => position.itemTrailingEdge > 0)
+            .where(
+              (position) =>
+                  position.itemTrailingEdge > 0 && position.itemLeadingEdge < 1,
+            )
             .toList()
-          ..sort((a, b) => a.index.compareTo(b.index));
+          ..sort((a, b) => a.itemLeadingEdge.compareTo(b.itemLeadingEdge));
     if (visible.isEmpty) return;
-    final index = visible.first.index;
+    final anchored = visible.where((position) => position.itemLeadingEdge >= 0);
+    final position = anchored.isEmpty ? visible.last : anchored.first;
+    final index = position.index;
     if (index >= _chunks.length) return;
     final pendingScrollOffset = _pendingScrollOffset;
+    if (!_scrollPositionChanged &&
+        pendingScrollOffset == null &&
+        index == _chunkForOffset(_offset)) {
+      return;
+    }
     if (pendingScrollOffset != null) {
-      if (index == _chunkForOffset(pendingScrollOffset)) return;
+      if (index == _chunkForOffset(pendingScrollOffset)) {
+        _pendingScrollOffset = null;
+        return;
+      }
       _registerManualNavigation();
     }
     final offset = _chunks[index].start;
-    if (offset == _offset) return;
+    final alignment = position.itemLeadingEdge.clamp(0, 1).toDouble();
+    if (offset == _offset &&
+        (_controller.scrollAlignment - alignment).abs() < .001) {
+      return;
+    }
     _invalidateQueuedNavigation();
     _pendingPageOffset = null;
-    setState(() => _controller.updateOffset(offset));
+    setState(
+      () => _controller.updateOffset(offset, scrollAlignment: alignment),
+    );
   }
 
   int _chunkForOffset(int offset) {
@@ -1268,6 +1348,11 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     _pendingScrollOffset = null;
     setState(() {
       _controller.applySettings(settings);
+      _scrollChunkGeneration++;
+      _scrollPositionsReady = false;
+      _scrollPositionChanged = false;
+      _scrollChunkLayoutKey = null;
+      _pendingScrollChunkLayoutKey = null;
       _paginationKey = null;
       _pages = null;
       _pageWindow = null;

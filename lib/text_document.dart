@@ -3,8 +3,10 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:characters/characters.dart' as characters;
 import 'package:charset_converter/charset_converter.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 enum TextEncoding { utf8, utf16le, utf16be, cp949 }
 
@@ -239,9 +241,18 @@ TextEncoding? _bomEncoding(Uint8List bytes) {
 String _normalizeLineEndings(String value) =>
     value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
 
-List<TextChunk> splitText(String text, {int maxChars = 1200}) {
+List<TextChunk> splitText(
+  String text, {
+  int maxChars = 1200,
+  TextStyle? layoutStyle,
+  double? maxWidth,
+  TextDirection textDirection = TextDirection.ltr,
+}) {
   if (text.isEmpty) return const [];
   if (maxChars < 1) throw ArgumentError.value(maxChars, 'maxChars');
+  if (maxWidth != null && (!maxWidth.isFinite || maxWidth <= 0)) {
+    throw ArgumentError.value(maxWidth, 'maxWidth');
+  }
 
   final result = <TextChunk>[];
   var start = 0;
@@ -258,7 +269,7 @@ List<TextChunk> splitText(String text, {int maxChars = 1200}) {
       if (newline >= 0) {
         end = newline + 1;
       } else {
-        final hardLimit = (start + 64 * 1024).clamp(0, text.length);
+        final hardLimit = (start + maxChars * 2).clamp(0, text.length);
         var nextNewline = -1;
         for (var index = end; index < hardLimit; index++) {
           if (text.codeUnitAt(index) == 0x0a) {
@@ -266,14 +277,66 @@ List<TextChunk> splitText(String text, {int maxChars = 1200}) {
             break;
           }
         }
-        end = nextNewline < 0 ? hardLimit : nextNewline + 1;
+        if (nextNewline >= 0) {
+          end = nextNewline + 1;
+        } else if (layoutStyle != null && maxWidth != null) {
+          end = _visualLineBoundary(
+            text,
+            start: start,
+            preferredEnd: end,
+            scanEnd: hardLimit,
+            style: layoutStyle,
+            maxWidth: maxWidth,
+            textDirection: textDirection,
+          );
+        }
       }
-      if (_splitsSurrogatePair(text, end)) end--;
+      end = _graphemeBoundaryAtOrBefore(text, end, after: start);
     }
     result.add(TextChunk._(start: start, end: end, source: text));
     start = end;
   }
   return result;
+}
+
+int _visualLineBoundary(
+  String text, {
+  required int start,
+  required int preferredEnd,
+  required int scanEnd,
+  required TextStyle style,
+  required double maxWidth,
+  required TextDirection textDirection,
+}) {
+  final safeScanEnd = _graphemeBoundaryAtOrBefore(text, scanEnd, after: start);
+  final segment = text.substring(start, safeScanEnd);
+  final painter = TextPainter(
+    text: TextSpan(text: segment, style: style),
+    textDirection: textDirection,
+  )..layout(maxWidth: maxWidth);
+  try {
+    final line = painter.getLineBoundary(
+      TextPosition(offset: (preferredEnd - start).clamp(0, segment.length)),
+    );
+    final localEnd = line.start > 0 ? line.start : line.end;
+    return start + localEnd;
+  } finally {
+    painter.dispose();
+  }
+}
+
+int _graphemeBoundaryAtOrBefore(
+  String text,
+  int candidate, {
+  required int after,
+}) {
+  if (candidate >= text.length) return text.length;
+  final range = characters.CharacterRange.at(text, candidate);
+  final boundary = range.stringBeforeLength;
+  if (boundary > after) return boundary;
+  if (range.isNotEmpty) return boundary + range.current.length;
+  if (range.moveNext()) return range.stringBeforeLength + range.current.length;
+  return text.length;
 }
 
 bool _startsWith(Uint8List bytes, List<int> prefix) {
@@ -307,14 +370,4 @@ Future<String> _decodeCp949(Uint8List bytes) async {
   } catch (_) {
     return CharsetConverter.decode('EUC-KR', bytes);
   }
-}
-
-bool _splitsSurrogatePair(String text, int offset) {
-  if (offset <= 0 || offset >= text.length) return false;
-  final before = text.codeUnitAt(offset - 1);
-  final after = text.codeUnitAt(offset);
-  return before >= 0xd800 &&
-      before <= 0xdbff &&
-      after >= 0xdc00 &&
-      after <= 0xdfff;
 }

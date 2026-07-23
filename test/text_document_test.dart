@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:characters/characters.dart' as characters;
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geulbom/text_document.dart';
 
@@ -130,13 +132,56 @@ void main() {
   });
 
   test('개행 없는 대형 텍스트도 단일 렌더링 청크로 만들지 않는다', () {
-    final source = List.filled(200000, '가').join();
+    final source = List.filled(70 * 1024, '가').join();
 
     final chunks = splitText(source, maxChars: 700);
 
     expect(chunks.length, greaterThan(1));
-    expect(chunks.every((chunk) => chunk.text.length <= 64 * 1024), isTrue);
+    expect(chunks.every((chunk) => chunk.text.length <= 1400), isTrue);
     expect(chunks.map((chunk) => chunk.text).join(), source);
+  });
+
+  test('chunks never split a Unicode grapheme cluster', () {
+    final source = List.filled(100, 'e\u0301👨‍👩‍👧‍👦').join();
+    final boundaries = <int>{0};
+    var offset = 0;
+    for (final character in characters.Characters(source)) {
+      offset += character.length;
+      boundaries.add(offset);
+    }
+
+    final chunks = splitText(source, maxChars: 7);
+
+    expect(chunks.map((chunk) => chunk.text).join(), source);
+    for (final chunk in chunks) {
+      expect(boundaries, contains(chunk.start));
+      expect(boundaries, contains(chunk.end));
+    }
+  });
+
+  test('layout-aware chunks end at actual visual line boundaries', () {
+    final source = List.filled(5000, '가').join();
+    const style = TextStyle(fontSize: 20, height: 1.5);
+
+    final chunks = splitText(
+      source,
+      maxChars: 300,
+      layoutStyle: style,
+      maxWidth: 180,
+    );
+    final painter = TextPainter(
+      text: TextSpan(text: source, style: style),
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: 180);
+    addTearDown(painter.dispose);
+
+    expect(chunks.length, greaterThan(1));
+    for (final chunk in chunks.take(chunks.length - 1)) {
+      expect(
+        painter.getLineBoundary(TextPosition(offset: chunk.end)).start,
+        chunk.end,
+      );
+    }
   });
 
   test('formats novel paragraphs without doubling existing indentation', () {
