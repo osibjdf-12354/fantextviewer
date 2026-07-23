@@ -45,7 +45,7 @@ void main() {
     expect(find.text('large.txt'), findsOneWidget);
     expect(
       tester.widget<Text>(find.byKey(const Key('page-indicator'))).data,
-      matches(RegExp(r'^\d+$')),
+      '계산 중',
     );
     expect(find.textContaining('%'), findsNothing);
     expect(tester.takeException(), isNull);
