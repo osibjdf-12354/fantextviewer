@@ -102,6 +102,28 @@ void main() {
     },
   );
 
+  test('persists auto page interval and defaults invalid values to five', () {
+    const settings = ReaderSettings(autoPageIntervalSeconds: 12);
+
+    expect(
+      ReaderSettings.fromJson(settings.toJson()).autoPageIntervalSeconds,
+      12,
+    );
+    expect(ReaderSettings.fromJson(const {}).autoPageIntervalSeconds, 5);
+    for (final invalid in [0, 61, -1, '5']) {
+      expect(
+        ReaderSettings.fromJson({
+          'autoPageIntervalSeconds': invalid,
+        }).autoPageIntervalSeconds,
+        5,
+      );
+    }
+    expect(
+      settings.copyWith(autoPageIntervalSeconds: 30).autoPageIntervalSeconds,
+      30,
+    );
+  });
+
   test('persists page turn direction and defaults to horizontal', () {
     const settings = ReaderSettings(pageTurnDirection: PageTurnDirection.both);
 

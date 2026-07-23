@@ -54,6 +54,9 @@ const _unchangedFontFileName = Object();
 int _paragraphIndentFromJson(Object? value) =>
     value is int && value >= 0 && value <= 2 ? value : 0;
 
+int _autoPageIntervalFromJson(Object? value) =>
+    value is int && value >= 1 && value <= 60 ? value : 5;
+
 class ReaderSettings {
   const ReaderSettings({
     this.mode = ReadingMode.scroll,
@@ -67,7 +70,9 @@ class ReaderSettings {
     this.keepAwake = false,
     this.showTotalPages = false,
     this.pageTurnDirection = PageTurnDirection.horizontal,
-  }) : assert(paragraphIndent >= 0 && paragraphIndent <= 2);
+    this.autoPageIntervalSeconds = 5,
+  }) : assert(paragraphIndent >= 0 && paragraphIndent <= 2),
+       assert(autoPageIntervalSeconds >= 1 && autoPageIntervalSeconds <= 60);
 
   final ReadingMode mode;
   final RgbColor background;
@@ -80,6 +85,7 @@ class ReaderSettings {
   final bool keepAwake;
   final bool showTotalPages;
   final PageTurnDirection pageTurnDirection;
+  final int autoPageIntervalSeconds;
 
   ReaderSettings copyWith({
     ReadingMode? mode,
@@ -93,6 +99,7 @@ class ReaderSettings {
     bool? keepAwake,
     bool? showTotalPages,
     PageTurnDirection? pageTurnDirection,
+    int? autoPageIntervalSeconds,
   }) {
     return ReaderSettings(
       mode: mode ?? this.mode,
@@ -108,6 +115,8 @@ class ReaderSettings {
       keepAwake: keepAwake ?? this.keepAwake,
       showTotalPages: showTotalPages ?? this.showTotalPages,
       pageTurnDirection: pageTurnDirection ?? this.pageTurnDirection,
+      autoPageIntervalSeconds:
+          autoPageIntervalSeconds ?? this.autoPageIntervalSeconds,
     );
   }
 
@@ -123,6 +132,7 @@ class ReaderSettings {
     'keepAwake': keepAwake,
     'showTotalPages': showTotalPages,
     'pageTurnDirection': pageTurnDirection.name,
+    'autoPageIntervalSeconds': autoPageIntervalSeconds,
   };
 
   factory ReaderSettings.fromJson(Map<String, dynamic> json) {
@@ -147,6 +157,9 @@ class ReaderSettings {
       pageTurnDirection: PageTurnDirection.values.firstWhere(
         (direction) => direction.name == json['pageTurnDirection'],
         orElse: () => PageTurnDirection.horizontal,
+      ),
+      autoPageIntervalSeconds: _autoPageIntervalFromJson(
+        json['autoPageIntervalSeconds'],
       ),
     );
   }
