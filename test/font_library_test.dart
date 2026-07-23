@@ -10,7 +10,7 @@ void main() {
       final root = await Directory.systemTemp.createTemp('geulbom_fonts');
       addTearDown(() => root.delete(recursive: true));
       final source = File('${root.path}${Platform.pathSeparator}Nanum.ttf');
-      await source.writeAsBytes([1, 2, 3]);
+      await source.writeAsBytes(_validTtfBytes);
       final registered = <String>[];
       final library = FontLibrary(
         Directory('${root.path}${Platform.pathSeparator}app-fonts'),
@@ -73,7 +73,7 @@ void main() {
     final root = await Directory.systemTemp.createTemp('geulbom_partial_font');
     addTearDown(() => root.delete(recursive: true));
     final source = File('${root.path}${Platform.pathSeparator}partial.ttf');
-    await source.writeAsBytes([1, 2, 3]);
+    await source.writeAsBytes(_validTtfBytes);
     final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
     final copyError = StateError('copy failed');
     final library = FontLibrary(
@@ -114,4 +114,68 @@ void main() {
       expect(await library.loadSelected('broken.ttf'), isFalse);
     },
   );
+
+  test('rejects oversized and invalid SFNT files before copying', () async {
+    final root = await Directory.systemTemp.createTemp('geulbom_font_limits');
+    addTearDown(() => root.delete(recursive: true));
+    final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
+    final invalid = File('${root.path}${Platform.pathSeparator}invalid.ttf');
+    final oversized = File(
+      '${root.path}${Platform.pathSeparator}oversized.otf',
+    );
+    await invalid.writeAsBytes([1, 2, 3, 4, 5]);
+    final handle = await oversized.open(mode: FileMode.write);
+    await handle.truncate(maxImportedFontBytes + 1);
+    await handle.close();
+    var copyCalls = 0;
+    final library = FontLibrary(
+      fonts,
+      registerFont: (_, _) async {},
+      copyFont: (source, target) async {
+        copyCalls++;
+        await source.copy(target.path);
+      },
+    );
+
+    await expectLater(
+      library.importFont(invalid.path),
+      throwsA(isA<FormatException>()),
+    );
+    await expectLater(
+      library.importFont(oversized.path),
+      throwsA(
+        isA<FormatException>().having(
+          (error) => error.message,
+          'message',
+          contains('크기'),
+        ),
+      ),
+    );
+
+    expect(copyCalls, 0);
+    expect(await fonts.exists(), isFalse);
+  });
+
+  test('lists only files with valid SFNT headers', () async {
+    final root = await Directory.systemTemp.createTemp('geulbom_font_headers');
+    addTearDown(() => root.delete(recursive: true));
+    final fonts = Directory('${root.path}${Platform.pathSeparator}fonts');
+    await fonts.create();
+    await File(
+      '${fonts.path}${Platform.pathSeparator}valid.otf',
+    ).writeAsBytes(_validOtfBytes);
+    await File(
+      '${fonts.path}${Platform.pathSeparator}broken.ttf',
+    ).writeAsBytes([0, 1, 2, 3]);
+
+    final listed = await FontLibrary(
+      fonts,
+      registerFont: (_, _) async {},
+    ).listFonts();
+
+    expect(listed.map((font) => font.fileName), ['valid.otf']);
+  });
 }
+
+const _validTtfBytes = [0x00, 0x01, 0x00, 0x00, 0, 0, 0, 0];
+const _validOtfBytes = [0x4f, 0x54, 0x54, 0x4f, 0, 0, 0, 0];

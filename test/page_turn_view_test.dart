@@ -334,6 +334,39 @@ void main() {
     expect(page.value, 1);
   });
 
+  testWidgets('system reduced motion makes programmatic turns immediate', (
+    tester,
+  ) async {
+    final key = GlobalKey<PageTurnViewState>();
+    final page = ValueNotifier(0);
+    addTearDown(page.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: ValueListenableBuilder<int>(
+            valueListenable: page,
+            builder: (context, index, _) => PageTurnView(
+              key: key,
+              index: index,
+              itemCount: 3,
+              direction: PageTurnDirection.vertical,
+              onPageChanged: (value) => page.value = value,
+              itemBuilder: (_, itemIndex) => Text('page $itemIndex'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final turn = key.currentState!.animateNext(Axis.vertical);
+    await tester.pump();
+
+    expect(await turn, isTrue);
+    expect(page.value, 1);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
   testWidgets('reports pointer interaction boundaries once', (tester) async {
     var starts = 0;
     var ends = 0;

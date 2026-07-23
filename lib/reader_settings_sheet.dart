@@ -409,7 +409,10 @@ class _ReaderSettingsSheetState extends State<ReaderSettingsSheet> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('글꼴 삭제'),
-        content: Text('${font.label} 글꼴의 앱 내부 복사본을 삭제할까요?'),
+        content: Text(
+          '${font.label} 글꼴의 앱 내부 복사본을 삭제할까요?'
+          '${widget.fontLibrary!.isLoaded(font.fileName) ? '\n\n이미 불러온 글꼴 데이터는 앱을 다시 시작할 때까지 메모리에 남을 수 있습니다.' : ''}',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),

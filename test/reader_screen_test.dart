@@ -140,7 +140,7 @@ void main() {
     final replacedModified = DateTime.utc(2026, 7, 18, 2);
     await tester.runAsync(() async {
       await fonts.create();
-      await font.writeAsBytes([1]);
+      await font.writeAsBytes(_validTtfBytes);
       await font.setLastModified(originalModified);
     });
     final cache = _MemoryPageIndexCache();
@@ -168,7 +168,7 @@ void main() {
 
     await pumpFontLibrary(FontLibrary(fonts), 'before');
     await tester.runAsync(() async {
-      await font.writeAsBytes([2]);
+      await font.writeAsBytes([..._validTtfBytes, 2]);
       await font.setLastModified(replacedModified);
     });
     await pumpFontLibrary(FontLibrary(fonts), 'after');
@@ -1821,6 +1821,36 @@ void main() {
     },
   );
 
+  testWidgets('system reduced motion disables automatic page turning', (
+    tester,
+  ) async {
+    final store = _MemoryStore();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: ReaderView(
+            path: '/book.txt',
+            title: 'book.txt',
+            text: _longText,
+            encoding: TextEncoding.utf8,
+            store: store,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    final autoSwitch = tester.widget<SwitchListTile>(
+      find.byKey(const Key('auto-mode-switch')),
+    );
+
+    expect(autoSwitch.onChanged, isNull);
+    expect(autoSwitch.value, isFalse);
+  });
+
   testWidgets('auto mode toggle preserves a distant scroll position', (
     tester,
   ) async {
@@ -2214,6 +2244,30 @@ void main() {
       ),
       1,
     );
+  });
+
+  testWidgets('낮은 명암비 색상을 한 번에 읽기 쉬운 기본값으로 복구한다', (tester) async {
+    final store = _MemoryStore();
+    await _pumpReader(tester, store, _longText);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('background-red')));
+    await tester.enterText(find.byKey(const Key('background-red')), '32');
+    await tester.enterText(find.byKey(const Key('background-green')), '48');
+    await tester.enterText(find.byKey(const Key('background-blue')), '32');
+    await tester.pump();
+
+    final reset = find.byKey(const Key('reset-accessible-colors'));
+    expect(reset, findsOneWidget);
+    await tester.tap(reset);
+    await _dismissSettings(tester);
+
+    expect(store.data.settings.background, const RgbColor(196, 236, 187));
+    expect(store.data.settings.foreground, const RgbColor(32, 48, 32));
   });
 
   testWidgets('스크롤 모드에서도 페이지 번호로 이동한다', (tester) async {
@@ -2633,7 +2687,7 @@ void main() {
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}나눔명조.ttf');
-    await tester.runAsync(() => source.writeAsBytes([1, 2, 3]));
+    await tester.runAsync(() => source.writeAsBytes(_validTtfBytes));
     final library = FontLibrary(
       Directory('${root.path}${Platform.pathSeparator}fonts'),
       registerFont: (_, _) async {},
@@ -2766,7 +2820,7 @@ void main() {
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}고딕.otf');
-    await tester.runAsync(() => source.writeAsBytes([1]));
+    await tester.runAsync(() => source.writeAsBytes(_validOtfBytes));
     final library = FontLibrary(
       Directory('${root.path}${Platform.pathSeparator}fonts'),
       registerFont: (_, _) async {},
@@ -2790,6 +2844,10 @@ void main() {
     );
     await tester.tap(find.byKey(Key('delete-font-${imported.fileName}')));
     await tester.pumpAndSettle();
+    expect(
+      find.textContaining('앱을 다시 시작할 때까지 메모리에 남을 수 있습니다.'),
+      findsOneWidget,
+    );
     await tester.tap(find.widgetWithText(FilledButton, '삭제'));
     await _pumpUntil(
       tester,
@@ -2811,8 +2869,8 @@ void main() {
     final savedSource = File('${root.path}${Platform.pathSeparator}saved.otf');
     final draftSource = File('${root.path}${Platform.pathSeparator}draft.otf');
     await tester.runAsync(() async {
-      await savedSource.writeAsBytes([1]);
-      await draftSource.writeAsBytes([2]);
+      await savedSource.writeAsBytes(_validTtfBytes);
+      await draftSource.writeAsBytes(_validOtfBytes);
     });
     final library = _DelayedDeleteFontLibrary(
       Directory('${root.path}${Platform.pathSeparator}fonts'),
@@ -2883,7 +2941,7 @@ void main() {
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}명조.otf');
-    await tester.runAsync(() => source.writeAsBytes([1]));
+    await tester.runAsync(() => source.writeAsBytes(_validOtfBytes));
     final library = _DelayedDeleteFontLibrary(
       Directory('${root.path}${Platform.pathSeparator}fonts'),
     );
@@ -2929,8 +2987,8 @@ void main() {
       '${root.path}${Platform.pathSeparator}replacement.otf',
     );
     await tester.runAsync(() async {
-      await source.writeAsBytes([1]);
-      await replacementSource.writeAsBytes([2]);
+      await source.writeAsBytes(_validOtfBytes);
+      await replacementSource.writeAsBytes([..._validOtfBytes, 2]);
     });
     final library = _DelayedDeleteFontLibrary(
       Directory('${root.path}${Platform.pathSeparator}fonts'),
@@ -2992,7 +3050,7 @@ void main() {
     ))!;
     addTearDown(() => tester.runAsync(() => root.delete(recursive: true)));
     final source = File('${root.path}${Platform.pathSeparator}고딕.otf');
-    await tester.runAsync(() => source.writeAsBytes([1]));
+    await tester.runAsync(() => source.writeAsBytes(_validOtfBytes));
     final library = FontLibrary(
       Directory('${root.path}${Platform.pathSeparator}fonts'),
       registerFont: (_, _) async {},
@@ -3195,3 +3253,6 @@ class _MemoryPageIndexCache extends PageIndexCache {
     records[signature] = pages;
   }
 }
+
+const _validTtfBytes = [0x00, 0x01, 0x00, 0x00, 0, 0, 0, 0];
+const _validOtfBytes = [0x4f, 0x54, 0x54, 0x4f, 0, 0, 0, 0];

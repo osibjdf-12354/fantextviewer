@@ -487,7 +487,10 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
               secondary: const Icon(Icons.play_circle_outline),
               title: const Text('오토모드'),
               value: _autoMode,
-              onChanged: widget.text.isEmpty ? null : _setAutoMode,
+              onChanged:
+                  widget.text.isEmpty || MediaQuery.disableAnimationsOf(context)
+                  ? null
+                  : _setAutoMode,
             ),
             const Divider(),
             _drawerItem(
@@ -1262,7 +1265,12 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
 
   void _restartAutoTimer() {
     _autoTimer?.cancel();
-    if (!_autoMode || _autoPauseDepth > 0 || !_appActive) return;
+    if (!_autoMode ||
+        _autoPauseDepth > 0 ||
+        !_appActive ||
+        MediaQuery.disableAnimationsOf(context)) {
+      return;
+    }
     final pages = _pageWindow?.pages ?? _pages;
     final index = _pageIndex;
     if (pages == null || index == null || index >= pages.length) return;

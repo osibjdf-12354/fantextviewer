@@ -51,6 +51,19 @@ class PageTurnViewState extends State<PageTurnView>
   VelocityTracker? _velocityTracker;
   bool _cancelled = false;
   Size _size = Size.zero;
+  bool _systemDisablesAnimations = false;
+
+  bool get _animationEnabled =>
+      widget.animationEnabled && !_systemDisablesAnimations;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final disabled = MediaQuery.disableAnimationsOf(context);
+    if (_systemDisablesAnimations == disabled) return;
+    _systemDisablesAnimations = disabled;
+    if (disabled) _resetInteraction();
+  }
 
   @override
   void didUpdateWidget(PageTurnView oldWidget) {
@@ -138,7 +151,7 @@ class PageTurnViewState extends State<PageTurnView>
       _progress.value = 0;
       return;
     }
-    if (!widget.animationEnabled) return;
+    if (!_animationEnabled) return;
     _progress.value = _dragProgress.clamp(-1, 1).toDouble();
   }
 
@@ -155,7 +168,7 @@ class PageTurnViewState extends State<PageTurnView>
     final cancelled = _cancelled;
     final axis = _axis;
     final velocity = _velocityTracker?.getVelocity().pixelsPerSecond;
-    final progress = widget.animationEnabled
+    final progress = _animationEnabled
         ? _progress.value
         : _dragProgress.clamp(-1, 1).toDouble();
     _pointer = null;
@@ -240,7 +253,7 @@ class PageTurnViewState extends State<PageTurnView>
       await _animateBack();
       return;
     }
-    if (!widget.animationEnabled) {
+    if (!_animationEnabled) {
       widget.onPageChanged(widget.index + pageDelta);
       return;
     }

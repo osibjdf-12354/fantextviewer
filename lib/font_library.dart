@@ -6,6 +6,8 @@ import 'package:flutter/services.dart';
 typedef FontRegistrar = Future<void> Function(String family, Uint8List bytes);
 typedef FontCopier = Future<void> Function(File source, File target);
 
+const maxImportedFontBytes = 32 * 1024 * 1024;
+
 class ImportedFont {
   const ImportedFont._(this.file, this.version);
 
@@ -50,6 +52,8 @@ class FontLibrary {
   String? versionFor(String? fileName) =>
       fileName == null ? null : _versions[fileName];
 
+  bool isLoaded(String fileName) => _loadedFileNames.contains(fileName);
+
   Future<List<ImportedFont>> listFonts() async {
     if (!await directory.exists()) {
       _versions.clear();
@@ -58,7 +62,14 @@ class FontLibrary {
     final fonts = <ImportedFont>[];
     await for (final entity in directory.list(followLinks: false)) {
       if (entity is File && _isFontPath(entity.path)) {
-        fonts.add(await _describeFont(entity));
+        try {
+          await _validateFont(entity);
+          fonts.add(await _describeFont(entity));
+        } on FormatException {
+          // Ignore stale or corrupt files instead of breaking the whole list.
+        } on FileSystemException {
+          // A single unreadable font must not hide the remaining library.
+        }
       }
     }
     fonts.sort(
@@ -81,13 +92,15 @@ class FontLibrary {
     if (!_isFontPath(sourcePath)) {
       throw const FormatException('지원하는 글꼴은 TTF 또는 OTF 파일입니다.');
     }
-    await directory.create(recursive: true);
     final source = File(sourcePath);
+    await _validateFont(source);
+    await directory.create(recursive: true);
     final target = await _availableTarget(
       source.path.split(Platform.pathSeparator).last,
     );
     try {
       await copyFont(source, target);
+      await _validateFont(target);
       final imported = await _describeFont(target);
       await loadFont(imported);
       _versions[imported.fileName] = imported.version;
@@ -102,6 +115,7 @@ class FontLibrary {
 
   Future<void> loadFont(ImportedFont font) async {
     if (_loadedFileNames.contains(font.fileName)) return;
+    await _validateFont(font.file);
     await registerFont(font.family, await font.file.readAsBytes());
     _loadedFileNames.add(font.fileName);
   }
@@ -148,6 +162,40 @@ class FontLibrary {
   static bool _isFontPath(String path) {
     final lower = path.toLowerCase();
     return lower.endsWith('.ttf') || lower.endsWith('.otf');
+  }
+
+  static Future<void> _validateFont(File file) async {
+    final stat = await file.stat();
+    if (stat.size > maxImportedFontBytes) {
+      throw const FormatException('글꼴 파일 크기는 32MB 이하여야 합니다.');
+    }
+    if (stat.size < 4) {
+      throw const FormatException('올바른 TTF 또는 OTF 글꼴 파일이 아닙니다.');
+    }
+
+    final handle = await file.open();
+    late final Uint8List header;
+    try {
+      header = await handle.read(4);
+    } finally {
+      await handle.close();
+    }
+    final valid =
+        _matches(header, const [0x00, 0x01, 0x00, 0x00]) ||
+        _matches(header, const [0x4f, 0x54, 0x54, 0x4f]) ||
+        _matches(header, const [0x74, 0x72, 0x75, 0x65]) ||
+        _matches(header, const [0x74, 0x74, 0x63, 0x66]);
+    if (!valid) {
+      throw const FormatException('올바른 TTF 또는 OTF 글꼴 파일이 아닙니다.');
+    }
+  }
+
+  static bool _matches(Uint8List bytes, List<int> signature) {
+    if (bytes.length != signature.length) return false;
+    for (var index = 0; index < signature.length; index++) {
+      if (bytes[index] != signature[index]) return false;
+    }
+    return true;
   }
 }
 
