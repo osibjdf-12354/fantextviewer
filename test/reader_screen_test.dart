@@ -330,6 +330,65 @@ void main() {
     },
   );
 
+  testWidgets(
+    'large scroll mode indexes a bounded prefix until distant navigation',
+    (tester) async {
+      final text = List.filled(300 * 1024, 'a').join();
+      final store = _MemoryStore();
+      final producedPerCall = <int>[];
+
+      Future<List<TextPage>> boundedPaginator({
+        required String text,
+        required Size size,
+        required TextStyle style,
+        required int paragraphIndent,
+        ValueChanged<double>? onProgress,
+        PaginationBatchCallback? onBatch,
+        TextLayoutCallback? onLayout,
+        bool Function()? isCancelled,
+      }) async {
+        final pages = <TextPage>[];
+        while (pages.length < 80 && isCancelled?.call() != true) {
+          final start = pages.length * 1000;
+          final page = TextPage(start: start, end: start + 1000);
+          pages.add(page);
+          onBatch?.call([page]);
+          onProgress?.call(page.end / text.length);
+          await Future<void>.delayed(Duration.zero);
+        }
+        producedPerCall.add(pages.length);
+        return pages;
+      }
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ReaderView(
+            path: '/book.txt',
+            title: 'book.txt',
+            text: text,
+            encoding: TextEncoding.utf8,
+            store: store,
+            paginator: boundedPaginator,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(producedPerCall, [32]);
+
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('위치 이동'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '60');
+      await tester.tap(find.text('이동'));
+      await tester.pumpAndSettle();
+
+      expect(producedPerCall, [32, 80]);
+      expect(store.document('/book.txt').offset, 59000);
+    },
+  );
+
   testWidgets('scroll and auto modes share exact page numbers', (tester) async {
     final line = '${List.filled(80, 'a').join()}\n';
     final text = List.filled(4000, line).join();
@@ -1512,6 +1571,40 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('찾을본문'), findsWidgets);
+  });
+
+  testWidgets('검색 결과를 강조하고 다음과 이전 결과를 순환한다', (tester) async {
+    const text = '앞 찾기 가운데 찾기 뒤';
+    final store = _MemoryStore();
+    await _pumpReader(tester, store, text);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('본문 검색'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '찾기');
+    await tester.tap(find.text('검색'));
+    await tester.pumpAndSettle();
+
+    final first = text.indexOf('찾기');
+    final second = text.indexOf('찾기', first + 1);
+    expect(store.document('/book.txt').offset, first);
+    expect(find.byKey(const Key('active-search-match')), findsOneWidget);
+    expect(find.byKey(const Key('search-navigation-bar')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('search-next')));
+    await tester.pumpAndSettle();
+    expect(store.document('/book.txt').offset, second);
+
+    await tester.tap(find.byKey(const Key('search-previous')));
+    await tester.pumpAndSettle();
+    expect(store.document('/book.txt').offset, first);
+
+    await tester.tap(find.byKey(const Key('search-close')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('active-search-match')), findsNothing);
+    expect(find.byKey(const Key('search-navigation-bar')), findsNothing);
   });
 
   testWidgets('새 이동은 완료가 늦은 검색 페이지 창을 취소한다', (tester) async {

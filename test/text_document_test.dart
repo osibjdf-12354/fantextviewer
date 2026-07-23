@@ -223,6 +223,20 @@ void main() {
     expect(formatted.sourceOffsetAt(formatted.text.length), source.length);
   });
 
+  test('maps source offsets to display offsets after inserted indentation', () {
+    const source = '첫 문단\n둘째';
+    final formatted = formatParagraphIndentation(
+      source,
+      start: 0,
+      end: source.length,
+      paragraphIndent: 2,
+    );
+
+    expect(formatted.displayOffsetForSource(0), 2);
+    expect(formatted.displayOffsetForSource(source.indexOf('둘')), 9);
+    expect(formatted.sourceOffsetAt(9), source.indexOf('둘'));
+  });
+
   test('zero indentation returns the unmodified source range', () {
     const source = '앞\n뒤';
     final formatted = formatParagraphIndentation(

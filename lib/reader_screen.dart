@@ -46,6 +46,7 @@ typedef ReaderWindowPaginator =
     });
 
 const _eagerScrollPaginationLimit = 256 * 1024;
+const _initialPaginationPageBudget = 32;
 
 class ReaderScreen extends StatefulWidget {
   const ReaderScreen({
@@ -261,9 +262,9 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   int _navigationGeneration = 0;
   int _displayPageNumber = 1;
   String? _paginationKey;
-  double _paginationProgress = 0;
   int _paginationGeneration = 0;
   bool _paginationComplete = false;
+  bool _fullPaginationRequested = false;
   bool _allowPop = false;
   String? _scrollChunkLayoutKey;
   String? _pendingScrollChunkLayoutKey;
@@ -357,6 +358,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           store: widget.store,
           path: widget.path,
           textLength: widget.text.length,
+          text: widget.text,
         );
     _chunks = splitText(widget.text, maxChars: 700);
     _itemPositionsListener.itemPositions.addListener(_recordScrollPosition);
@@ -429,31 +431,42 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
             ? Center(
                 child: Text('빈 파일입니다.', style: TextStyle(color: foreground)),
               )
-            : Column(
+            : Stack(
                 children: [
-                  Expanded(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final pageSize = Size(
-                          math.max(
-                            1,
-                            constraints.maxWidth -
-                                _settings.horizontalPadding * 2,
-                          ),
-                          math.max(1, constraints.maxHeight),
-                        );
-                        _pageSize = pageSize;
-                        if (_activeMode == ReadingMode.scroll) {
-                          _ensureScrollChunks(pageSize);
-                        }
-                        _ensurePages(pageSize);
-                        return _activeMode == ReadingMode.scroll
-                            ? _buildScrollReader()
-                            : _buildPageReader();
-                      },
-                    ),
+                  Column(
+                    children: [
+                      Expanded(
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final pageSize = Size(
+                              math.max(
+                                1,
+                                constraints.maxWidth -
+                                    _settings.horizontalPadding * 2,
+                              ),
+                              math.max(1, constraints.maxHeight),
+                            );
+                            _pageSize = pageSize;
+                            if (_activeMode == ReadingMode.scroll) {
+                              _ensureScrollChunks(pageSize);
+                            }
+                            _ensurePages(pageSize);
+                            return _activeMode == ReadingMode.scroll
+                                ? _buildScrollReader()
+                                : _buildPageReader();
+                          },
+                        ),
+                      ),
+                      _buildSystemPageIndicator(context),
+                    ],
                   ),
-                  _buildSystemPageIndicator(context),
+                  if (_controller.activeSearchMatch != null)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: MediaQuery.viewPaddingOf(context).bottom + 28,
+                      child: _buildSearchNavigationBar(),
+                    ),
                 ],
               ),
       ),
@@ -563,15 +576,13 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
             ),
             itemBuilder: (context, index) {
               final chunk = _chunks[index];
-              return Text(
+              return _buildReaderText(
                 formatParagraphIndentation(
                   widget.text,
                   start: chunk.start,
                   end: chunk.end,
                   paragraphIndent: _settings.paragraphIndent,
-                ).text,
-                style: _textStyle,
-                textScaler: TextScaler.noScaling,
+                ),
               );
             },
           ),
@@ -631,16 +642,19 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     final pages = window?.pages ?? _pages;
     final pageIndex = _pageIndex;
     if (pages == null || pageIndex == null || pages.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(
-              value: _paginationProgress == 0 ? null : _paginationProgress,
-            ),
-            const SizedBox(height: 12),
-            const Text('페이지를 계산하고 있습니다.'),
-          ],
+      return ValueListenableBuilder<PaginationActivity>(
+        valueListenable: _controller.paginationActivity,
+        builder: (context, activity, child) => Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(
+                value: activity.progress == 0 ? null : activity.progress,
+              ),
+              const SizedBox(height: 12),
+              const Text('페이지를 계산하고 있습니다.'),
+            ],
+          ),
         ),
       );
     }
@@ -668,6 +682,11 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           _pendingScrollOffset = null;
           _setOffset(nextOffset);
         });
+        if (window == null &&
+            !_paginationComplete &&
+            index >= pages.length - 4) {
+          _requestFullPagination();
+        }
         _restartAutoTimer();
       },
       itemBuilder: (context, index) {
@@ -683,15 +702,13 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           child: Align(
             alignment: Alignment.topLeft,
             child: SelectionArea(
-              child: Text(
+              child: _buildReaderText(
                 formatParagraphIndentation(
                   widget.text,
                   start: page.displayStart,
                   end: page.end,
                   paragraphIndent: _settings.paragraphIndent,
-                ).text,
-                style: _textStyle,
-                textScaler: TextScaler.noScaling,
+                ),
               ),
             ),
           ),
@@ -700,17 +717,109 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     );
   }
 
-  Widget _buildSystemPageIndicator(BuildContext context) {
-    return ConstrainedBox(
-      constraints: BoxConstraints(
-        minHeight: MediaQuery.viewPaddingOf(context).bottom,
+  Widget _buildReaderText(IndentedText formatted) {
+    final match = _controller.activeSearchMatch;
+    if (match == null ||
+        match.end <= formatted.sourceStart ||
+        match.start >= formatted.sourceEnd) {
+      return Text(
+        formatted.text,
+        style: _textStyle,
+        textScaler: TextScaler.noScaling,
+      );
+    }
+
+    final sourceStart = math.max(match.start, formatted.sourceStart);
+    final sourceEnd = math.min(match.end, formatted.sourceEnd);
+    final displayStart = formatted.displayOffsetForSource(sourceStart);
+    final displayEnd = formatted.displayOffsetForSource(sourceEnd);
+    return Text.rich(
+      TextSpan(
+        children: [
+          if (displayStart > 0)
+            TextSpan(text: formatted.text.substring(0, displayStart)),
+          TextSpan(
+            text: formatted.text.substring(displayStart, displayEnd),
+            style: TextStyle(
+              backgroundColor: Color(
+                _settings.foreground.value,
+              ).withValues(alpha: .22),
+              decoration: TextDecoration.underline,
+              decorationThickness: 2,
+            ),
+          ),
+          if (displayEnd < formatted.text.length)
+            TextSpan(text: formatted.text.substring(displayEnd)),
+        ],
       ),
-      child: Align(
-        alignment: Alignment.bottomRight,
-        heightFactor: 1,
-        child: Padding(
-          padding: EdgeInsetsDirectional.only(end: _settings.horizontalPadding),
-          child: _buildPageIndicator(),
+      key: match.start >= formatted.sourceStart
+          ? const Key('active-search-match')
+          : null,
+      style: _textStyle,
+      textScaler: TextScaler.noScaling,
+    );
+  }
+
+  Widget _buildSearchNavigationBar() {
+    return Material(
+      color: Color(_settings.background.value),
+      child: SafeArea(
+        top: false,
+        bottom: false,
+        child: Row(
+          key: const Key('search-navigation-bar'),
+          children: [
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _controller.searchQuery,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Color(_settings.foreground.value)),
+              ),
+            ),
+            IconButton(
+              key: const Key('search-previous'),
+              tooltip: '이전 검색 결과',
+              onPressed: () => _moveSearchResult(forward: false),
+              icon: const Icon(Icons.keyboard_arrow_up),
+            ),
+            IconButton(
+              key: const Key('search-next'),
+              tooltip: '다음 검색 결과',
+              onPressed: () => _moveSearchResult(forward: true),
+              icon: const Icon(Icons.keyboard_arrow_down),
+            ),
+            IconButton(
+              key: const Key('search-close'),
+              tooltip: '검색 종료',
+              onPressed: () {
+                setState(_controller.clearSearch);
+              },
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSystemPageIndicator(BuildContext context) {
+    return ValueListenableBuilder<PaginationActivity>(
+      valueListenable: _controller.paginationActivity,
+      builder: (context, activity, child) => ConstrainedBox(
+        constraints: BoxConstraints(
+          minHeight: MediaQuery.viewPaddingOf(context).bottom,
+        ),
+        child: Align(
+          alignment: Alignment.bottomRight,
+          heightFactor: 1,
+          child: Padding(
+            padding: EdgeInsetsDirectional.only(
+              end: _settings.horizontalPadding,
+            ),
+            child: _buildPageIndicator(),
+          ),
         ),
       ),
     );
@@ -733,6 +842,19 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     );
   }
 
+  void _requestFullPagination() {
+    if (_fullPaginationRequested ||
+        widget.text.length <= _eagerScrollPaginationLimit) {
+      return;
+    }
+    final size = _pageSize;
+    if (size == null) return;
+    _fullPaginationRequested = true;
+    _paginationKey = null;
+    _ensurePages(size);
+    if (_isPaged) setState(() {});
+  }
+
   void _ensurePages(Size size) {
     final textStyle = _textStyle;
     final key = jsonEncode({
@@ -750,17 +872,19 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       'lineHeight': _settings.lineHeight,
       'horizontalPadding': _settings.horizontalPadding,
       'paragraphIndent': _settings.paragraphIndent,
+      'fullPagination': _fullPaginationRequested || _settings.showTotalPages,
     });
     if (_paginationKey == key) return;
     _paginationKey = key;
     _pageWindowGeneration++;
     _pageWindow = null;
     _pages = null;
-    _paginationProgress = 0;
     _paginationComplete = false;
     _pageIndex = null;
     final generation = ++_paginationGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || generation != _paginationGeneration) return;
+      _controller.resetPaginationActivity();
       final cache = widget.pageIndexCache;
       if (cache != null) {
         final cached = await cache.load(
@@ -770,6 +894,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         if (!mounted || generation != _paginationGeneration) return;
         if (cached != null) {
           _setPaginationPages(cached, complete: true);
+          _controller.updatePaginationProgress(1);
           return;
         }
       }
@@ -780,6 +905,10 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         if (!mounted || generation != _paginationGeneration) return;
       }
       final progressivePages = <TextPage>[];
+      final bounded =
+          widget.text.length > _eagerScrollPaginationLimit &&
+          !_fullPaginationRequested &&
+          !_settings.showTotalPages;
       final pages = await widget.paginator(
         text: widget.text,
         size: size,
@@ -787,7 +916,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         paragraphIndent: _settings.paragraphIndent,
         onProgress: (progress) {
           if (!mounted || generation != _paginationGeneration) return;
-          setState(() => _paginationProgress = progress);
+          _controller.updatePaginationProgress(progress);
         },
         onBatch: (batch) {
           if (!mounted ||
@@ -798,7 +927,11 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           progressivePages.addAll(batch);
           _setPaginationPages(progressivePages, complete: false);
         },
-        isCancelled: () => !mounted || generation != _paginationGeneration,
+        isCancelled: () =>
+            !mounted ||
+            generation != _paginationGeneration ||
+            (bounded &&
+                progressivePages.length >= _initialPaginationPageBudget),
       );
       if (!mounted || generation != _paginationGeneration) return;
       final complete =
@@ -806,6 +939,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
           pages.first.start == 0 &&
           pages.last.end == widget.text.length;
       _setPaginationPages(pages, complete: complete);
+      if (complete) _controller.updatePaginationProgress(1);
       if (complete && cache != null) {
         await cache.save(
           signature: key,
@@ -829,10 +963,16 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
         pages.last.end > _offset) {
       _pageIndex = initialPage;
     }
-    setState(() {
+    if (_activeMode == ReadingMode.scroll) {
       _pages = pages;
       _paginationComplete = complete;
-    });
+      _controller.notifyPaginationChanged();
+    } else {
+      setState(() {
+        _pages = pages;
+        _paginationComplete = complete;
+      });
+    }
     final pendingTargetPage = _pendingTargetPage;
     if (pendingTargetPage != null) {
       if (pendingTargetPage <= pages.length) {
@@ -1028,10 +1168,9 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       return;
     }
     if (sourceOffset == null) {
-      final size = _pageSize;
-      if (_paginationKey == null && size != null) _ensurePages(size);
       _navigationGeneration++;
       _pendingTargetPage = page;
+      _requestFullPagination();
       _showMessage('$page페이지까지 계산하고 있습니다. 계산되는 즉시 이동합니다.');
       return;
     }
@@ -1131,6 +1270,11 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       _setAutoMode(false);
       _showMessage('마지막 페이지입니다. 오토모드를 종료했습니다.');
       return;
+    }
+    if (_pageWindow == null &&
+        !_paginationComplete &&
+        index >= pages.length - 4) {
+      _requestFullPagination();
     }
     if (index + 1 >= pages.length) return;
     _autoTimer = Timer(
@@ -1252,16 +1396,23 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
       ),
     );
     if (query == null || query.isEmpty || !mounted) return;
-    var found = widget.text.indexOf(
-      query,
-      math.min(_offset + 1, widget.text.length),
-    );
-    if (found < 0) found = widget.text.indexOf(query);
-    if (found < 0) {
+    final match = _controller.startSearch(query);
+    if (match == null) {
       _showMessage('검색 결과가 없습니다.');
     } else {
-      _jumpToOffset(found);
+      _jumpToOffset(match.start);
     }
+  }
+
+  void _moveSearchResult({required bool forward}) {
+    final match = forward
+        ? _controller.nextSearchResult()
+        : _controller.previousSearchResult();
+    if (match == null) {
+      _showMessage('검색 결과가 없습니다.');
+      return;
+    }
+    _jumpToOffset(match.start);
   }
 
   Future<void> _showBookmarks() async {
@@ -1348,6 +1499,7 @@ class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
     _pendingScrollOffset = null;
     setState(() {
       _controller.applySettings(settings);
+      _fullPaginationRequested = settings.showTotalPages;
       _scrollChunkGeneration++;
       _scrollPositionsReady = false;
       _scrollPositionChanged = false;

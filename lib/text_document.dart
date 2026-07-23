@@ -77,6 +77,16 @@ class IndentedText {
         .clamp(sourceStart, sourceEnd)
         .toInt();
   }
+
+  int displayOffsetForSource(int sourceOffset) {
+    final safeSourceOffset = sourceOffset.clamp(sourceStart, sourceEnd).toInt();
+    var displayOffset = safeSourceOffset - sourceStart;
+    for (final insertedOffset in _insertedOffsets) {
+      if (insertedOffset > displayOffset) break;
+      displayOffset++;
+    }
+    return displayOffset.clamp(0, text.length).toInt();
+  }
 }
 
 IndentedText formatParagraphIndentation(
