@@ -80,10 +80,29 @@ class _ReaderScreenState extends State<ReaderScreen> {
     });
     try {
       final file = File(widget.path);
+      final stat = await file.stat();
+      if (!mounted || generation != _generation) return;
+      widget.store.updateFileFingerprint(
+        widget.path,
+        fileSize: stat.size,
+        modified: stat.modified,
+      );
       final saved = widget.store.document(widget.path).encoding;
       final encoding = forced ?? _encodingByName(saved);
+      if (stat.size > 32 * 1024 * 1024) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || generation != _generation) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('큰 파일을 여는 중입니다. 잠시 기다려 주세요.')),
+          );
+        });
+      }
       final document = await loadTextFile(widget.path, forced: encoding);
-      final stat = await file.stat();
+      final decodedStat = await file.stat();
+      if (decodedStat.size != stat.size ||
+          decodedStat.modified.toUtc() != stat.modified.toUtc()) {
+        throw const FileSystemException('읽는 동안 파일이 변경되었습니다. 다시 시도해 주세요.');
+      }
       if (!mounted || generation != _generation) return;
 
       widget.store.setEncoding(widget.path, document.encoding.name);
@@ -104,14 +123,6 @@ class _ReaderScreenState extends State<ReaderScreen> {
         _document = document;
         _stat = stat;
       });
-      if (stat.size > 50 * 1024 * 1024) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('파일이 매우 커서 처음 여는 데 시간이 걸릴 수 있습니다.')),
-          );
-        });
-      }
     } catch (error) {
       if (!mounted || generation != _generation) return;
       setState(() => _error = error);

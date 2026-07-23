@@ -325,6 +325,58 @@ void main() {
     await expectLater(store.save(), throwsA(isA<FileSystemException>()));
   });
 
+  test('a changed file invalidates file-derived document state', () {
+    final store = AppStore(File('unused'));
+    store.touchRecent(
+      '/book.txt',
+      fileSize: 100,
+      modified: DateTime.utc(2026, 1, 1),
+    );
+    store.setEncoding('/book.txt', 'cp949');
+    store.updateProgress(
+      '/book.txt',
+      offset: 42,
+      scrollAlignment: .5,
+      documentLength: 100,
+    );
+    store.addBookmark(
+      '/book.txt',
+      const Bookmark(offset: 42, excerpt: 'saved', createdAt: 'now'),
+    );
+
+    expect(
+      store.updateFileFingerprint(
+        '/book.txt',
+        fileSize: 101,
+        modified: DateTime.utc(2026, 1, 2),
+      ),
+      isTrue,
+    );
+
+    final state = store.document('/book.txt');
+    expect(state.offset, 0);
+    expect(state.scrollAlignment, 0);
+    expect(state.encoding, isNull);
+    expect(state.bookmarks, isEmpty);
+    expect(state.fileSize, 101);
+    expect(state.modified, '2026-01-02T00:00:00.000Z');
+  });
+
+  test('first fingerprint migration preserves legacy reading progress', () {
+    final store = AppStore(File('unused'))
+      ..updateProgress('/book.txt', offset: 42, documentLength: 100);
+
+    expect(
+      store.updateFileFingerprint(
+        '/book.txt',
+        fileSize: 100,
+        modified: DateTime.utc(2026, 1, 1),
+      ),
+      isFalse,
+    );
+    expect(store.document('/book.txt').offset, 42);
+  });
+
   test('손상된 저장 파일을 보존하고 기본값으로 복구한다', () async {
     final directory = await Directory.systemTemp.createTemp('geulbom_broken');
     addTearDown(() => directory.delete(recursive: true));

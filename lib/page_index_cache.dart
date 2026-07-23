@@ -5,10 +5,15 @@ import 'package:path_provider/path_provider.dart';
 
 import 'text_paginator.dart';
 
+typedef CacheErrorHandler = void Function(Object error, StackTrace stackTrace);
+
 class PageIndexCache {
-  PageIndexCache({this.directory});
+  PageIndexCache({this.directory, this.onError});
 
   final Directory? directory;
+  final CacheErrorHandler? onError;
+
+  static const currentSchemaVersion = 1;
 
   Future<List<TextPage>?> load({
     required String signature,
@@ -19,6 +24,7 @@ class PageIndexCache {
       if (!await file.exists()) return null;
       final record = jsonDecode(await file.readAsString());
       if (record is! Map<String, dynamic> ||
+          record['schemaVersion'] != currentSchemaVersion ||
           record['signature'] != signature ||
           record['textLength'] != textLength ||
           record['starts'] is! List ||
@@ -40,7 +46,8 @@ class PageIndexCache {
             displayStart: displayStarts[index],
           ),
       ];
-    } catch (_) {
+    } catch (error, stackTrace) {
+      onError?.call(error, stackTrace);
       return null;
     }
   }
@@ -54,9 +61,10 @@ class PageIndexCache {
     try {
       final file = await _file(signature);
       await file.parent.create(recursive: true);
-      temporary = File('${file.path}.tmp');
+      temporary = File('${file.path}.${identityHashCode(pages)}.tmp');
       await temporary.writeAsString(
         jsonEncode({
+          'schemaVersion': currentSchemaVersion,
           'signature': signature,
           'textLength': textLength,
           'starts': pages.map((page) => page.start).toList(),
@@ -66,12 +74,15 @@ class PageIndexCache {
       );
       await temporary.rename(file.path);
       await _prune(file.parent, file);
-    } catch (_) {
+    } catch (error, stackTrace) {
+      onError?.call(error, stackTrace);
       try {
         if (temporary != null && await temporary.exists()) {
           await temporary.delete();
         }
-      } catch (_) {}
+      } catch (cleanupError, cleanupStackTrace) {
+        onError?.call(cleanupError, cleanupStackTrace);
+      }
     }
   }
 

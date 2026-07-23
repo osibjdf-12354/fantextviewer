@@ -29,22 +29,60 @@ void main() {
     },
   );
 
-  test('BOM과 UTF-8 유효성으로 인코딩을 판별한다', () {
+  test('production decode path detects BOM, UTF-8, and CP949', () async {
     expect(
-      detectTextEncoding(Uint8List.fromList([0xef, 0xbb, 0xbf, 0x61])),
+      (await decodeText(Uint8List.fromList([0xef, 0xbb, 0xbf, 0x61]))).encoding,
       TextEncoding.utf8,
     );
     expect(
-      detectTextEncoding(Uint8List.fromList([0xff, 0xfe, 0x61, 0])),
+      (await decodeText(Uint8List.fromList([0xff, 0xfe, 0x61, 0]))).encoding,
       TextEncoding.utf16le,
     );
     expect(
-      detectTextEncoding(Uint8List.fromList([0xfe, 0xff, 0, 0x61])),
+      (await decodeText(Uint8List.fromList([0xfe, 0xff, 0, 0x61]))).encoding,
       TextEncoding.utf16be,
     );
     expect(
-      detectTextEncoding(Uint8List.fromList([0xb0, 0xa1])),
+      (await decodeText(
+        Uint8List.fromList([0xb0, 0xa1]),
+        cp949Decoder: (_) async => '가',
+      )).encoding,
       TextEncoding.cp949,
+    );
+  });
+
+  test('rejects an oversized file before decoding it', () async {
+    final directory = await Directory.systemTemp.createTemp('geulbom_limit');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}${Platform.pathSeparator}large.txt');
+    await file.writeAsBytes(List<int>.filled(17, 0x61));
+
+    await expectLater(
+      loadTextFile(file.path, maxFileBytes: 16),
+      throwsA(
+        isA<TextFileTooLargeException>()
+            .having((error) => error.actualBytes, 'actualBytes', 17)
+            .having((error) => error.maximumBytes, 'maximumBytes', 16),
+      ),
+    );
+  });
+
+  test('bounds whole-file decoding for UTF-16 and CP949', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'geulbom_decode_limit',
+    );
+    addTearDown(() => directory.delete(recursive: true));
+    final file = File('${directory.path}${Platform.pathSeparator}legacy.txt');
+    await file.writeAsBytes(List<int>.filled(9, 0x61));
+
+    await expectLater(
+      loadTextFile(
+        file.path,
+        forced: TextEncoding.cp949,
+        maxFileBytes: 20,
+        maxWholeFileBytes: 8,
+      ),
+      throwsA(isA<TextFileTooLargeException>()),
     );
   });
 

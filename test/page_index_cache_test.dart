@@ -104,6 +104,47 @@ void main() {
     expect(await cache.load(signature: 'book-a', textLength: 9), isNull);
   });
 
+  test(
+    'reports malformed cache diagnostics without failing the reader',
+    () async {
+      final errors = <Object>[];
+      cache = PageIndexCache(
+        directory: directory,
+        onError: (error, _) => errors.add(error),
+      );
+      await cache.save(
+        signature: 'book-a',
+        textLength: 9,
+        pages: const [TextPage(start: 0, end: 9)],
+      );
+      final file = directory.listSync().whereType<File>().single;
+      await file.writeAsString('{broken');
+
+      expect(await cache.load(signature: 'book-a', textLength: 9), isNull);
+      expect(errors, hasLength(1));
+      expect(errors.single, isA<FormatException>());
+    },
+  );
+
+  test(
+    'stores a cache schema and rejects records from another schema',
+    () async {
+      await cache.save(
+        signature: 'book-a',
+        textLength: 9,
+        pages: const [TextPage(start: 0, end: 9)],
+      );
+      final file = directory.listSync().whereType<File>().single;
+      final record =
+          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      expect(record['schemaVersion'], PageIndexCache.currentSchemaVersion);
+
+      record['schemaVersion'] = -1;
+      await file.writeAsString(jsonEncode(record));
+      expect(await cache.load(signature: 'book-a', textLength: 9), isNull);
+    },
+  );
+
   test('rejects malformed page display starts', () async {
     await cache.save(
       signature: 'book-a',

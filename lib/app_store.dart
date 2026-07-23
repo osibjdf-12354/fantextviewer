@@ -96,6 +96,27 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool updateFileFingerprint(
+    String path, {
+    required int fileSize,
+    required DateTime modified,
+  }) {
+    final state = document(path);
+    final modifiedUtc = modified.toUtc().toIso8601String();
+    final changed =
+        (state.fileSize != null && state.fileSize != fileSize) ||
+        (state.modified != null && state.modified != modifiedUtc);
+    if (changed) {
+      state.offset = 0;
+      state.scrollAlignment = 0;
+      state.encoding = null;
+      state.bookmarks.clear();
+    }
+    state.fileSize = fileSize;
+    state.modified = modifiedUtc;
+    return changed;
+  }
+
   void updateProgress(
     String path, {
     required int offset,

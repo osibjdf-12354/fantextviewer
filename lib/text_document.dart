@@ -8,6 +8,28 @@ import 'package:flutter/services.dart';
 
 enum TextEncoding { utf8, utf16le, utf16be, cp949 }
 
+const maxSupportedTextFileBytes = 64 * 1024 * 1024;
+const maxWholeFileDecodeBytes = 32 * 1024 * 1024;
+
+class TextFileTooLargeException implements Exception {
+  const TextFileTooLargeException({
+    required this.actualBytes,
+    required this.maximumBytes,
+    required this.encoding,
+  });
+
+  final int actualBytes;
+  final int maximumBytes;
+  final TextEncoding? encoding;
+
+  @override
+  String toString() {
+    final encodingLabel = encoding == null ? '' : ' (${encoding!.name})';
+    return '파일이 너무 큽니다$encodingLabel: '
+        '$actualBytes바이트 / 최대 $maximumBytes바이트';
+  }
+}
+
 class DecodedText {
   const DecodedText(this.text, this.encoding);
 
@@ -85,17 +107,6 @@ IndentedText formatParagraphIndentation(
   return IndentedText(buffer.toString(), start, end, insertedOffsets);
 }
 
-TextEncoding detectTextEncoding(Uint8List bytes) {
-  final bomEncoding = _bomEncoding(bytes);
-  if (bomEncoding != null) return bomEncoding;
-  try {
-    utf8.decode(bytes, allowMalformed: false);
-    return TextEncoding.utf8;
-  } on FormatException {
-    return TextEncoding.cp949;
-  }
-}
-
 Future<DecodedText> decodeText(
   Uint8List bytes, {
   TextEncoding? forced,
@@ -117,10 +128,21 @@ Future<DecodedText> decodeText(
   return DecodedText(_normalizeLineEndings(value), encoding);
 }
 
-Future<DecodedText> loadTextFile(String path, {TextEncoding? forced}) async {
+Future<DecodedText> loadTextFile(
+  String path, {
+  TextEncoding? forced,
+  int maxFileBytes = maxSupportedTextFileBytes,
+  int maxWholeFileBytes = maxWholeFileDecodeBytes,
+}) async {
   final rootToken = ServicesBinding.rootIsolateToken;
   return Isolate.run(
-    () => _loadTextFileInBackground(path, forced, rootToken),
+    () => _loadTextFileInBackground(
+      path,
+      forced,
+      rootToken,
+      maxFileBytes,
+      maxWholeFileBytes,
+    ),
     debugName: 'load text file',
   );
 }
@@ -129,11 +151,21 @@ Future<DecodedText> _loadTextFileInBackground(
   String path,
   TextEncoding? forced,
   RootIsolateToken? rootToken,
+  int maxFileBytes,
+  int maxWholeFileBytes,
 ) async {
   if (rootToken != null) {
     BackgroundIsolateBinaryMessenger.ensureInitialized(rootToken);
   }
   final file = File(path);
+  final size = await file.length();
+  if (size > maxFileBytes) {
+    throw TextFileTooLargeException(
+      actualBytes: size,
+      maximumBytes: maxFileBytes,
+      encoding: forced,
+    );
+  }
   final reader = await file.open();
   late final Uint8List prefix;
   try {
@@ -143,6 +175,15 @@ Future<DecodedText> _loadTextFileInBackground(
   }
   final bomEncoding = _bomEncoding(prefix);
   final encoding = forced ?? bomEncoding;
+  if (encoding != null &&
+      encoding != TextEncoding.utf8 &&
+      size > maxWholeFileBytes) {
+    throw TextFileTooLargeException(
+      actualBytes: size,
+      maximumBytes: maxWholeFileBytes,
+      encoding: encoding,
+    );
+  }
   if (encoding == null || encoding == TextEncoding.utf8) {
     try {
       final start = bomEncoding == TextEncoding.utf8 ? 3 : 0;
@@ -151,6 +192,13 @@ Future<DecodedText> _loadTextFileInBackground(
     } on FormatException {
       if (encoding == TextEncoding.utf8) rethrow;
     }
+  }
+  if (size > maxWholeFileBytes) {
+    throw TextFileTooLargeException(
+      actualBytes: size,
+      maximumBytes: maxWholeFileBytes,
+      encoding: encoding ?? TextEncoding.cp949,
+    );
   }
   final bytes = await file.readAsBytes();
   return decodeText(bytes, forced: encoding ?? TextEncoding.cp949);
