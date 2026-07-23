@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'strings.dart';
+import 'text_file_importer.dart';
 
 enum BrowserSort { name, modified }
 
@@ -74,15 +75,6 @@ Future<List<BrowserEntry>> listTextEntries(
     };
   });
   return entries;
-}
-
-Future<String?> pickTextFile() async {
-  const textFiles = XTypeGroup(
-    label: AppStrings.textFile,
-    extensions: ['txt'],
-    mimeTypes: ['text/plain'],
-  );
-  return (await openFile(acceptedTypeGroups: const [textFiles]))?.path;
 }
 
 Future<String?> pickTextDirectory({String? initialDirectory}) {

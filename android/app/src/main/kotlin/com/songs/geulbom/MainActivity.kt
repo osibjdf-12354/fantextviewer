@@ -1,14 +1,22 @@
 package com.songs.geulbom
 
+import android.app.Activity
+import android.content.Intent
+import android.database.Cursor
+import android.net.Uri
+import android.provider.OpenableColumns
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 import java.nio.charset.Charset
+import java.security.MessageDigest
 import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
-    private val decoder = Executors.newSingleThreadExecutor()
+    private val fileExecutor = Executors.newSingleThreadExecutor()
+    private val importer = TextFileImporter(MAX_IMPORTED_TEXT_BYTES)
+    private var pendingImportResult: MethodChannel.Result? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -16,29 +24,190 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             "com.songs.geulbom/text-file",
         ).setMethodCallHandler { call, result ->
-            if (call.method != "decode") {
-                result.notImplemented()
-                return@setMethodCallHandler
-            }
-            val path = call.argument<String>("path")
-            val encoding = call.argument<String>("encoding")
-            if (path == null || encoding == null) {
-                result.error("invalid_argument", "path and encoding are required", null)
-                return@setMethodCallHandler
-            }
-            decoder.execute {
-                try {
-                    val text =
-                        File(path).bufferedReader(Charset.forName(encoding)).use { it.readText() }
-                    runOnUiThread { result.success(text) }
-                } catch (error: Throwable) {
-                    runOnUiThread {
-                        result.error("decode_failed", error.message, error.toString())
+            when (call.method) {
+                "decode" -> decodeTextFile(call.arguments as? Map<*, *>, result)
+                "importTextFile" -> openTextDocument(result)
+                "promoteLegacyImport" -> {
+                    val path = call.argument<String>("path")
+                    if (path == null) {
+                        result.error("invalid_argument", "path is required", null)
+                    } else {
+                        promoteLegacyImport(path, result)
                     }
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun decodeTextFile(
+        arguments: Map<*, *>?,
+        result: MethodChannel.Result,
+    ) {
+        val path = arguments?.get("path") as? String
+        val encoding = arguments?.get("encoding") as? String
+        if (path == null || encoding == null) {
+            result.error("invalid_argument", "path and encoding are required", null)
+            return
+        }
+        fileExecutor.execute {
+            try {
+                val text =
+                    File(path).bufferedReader(Charset.forName(encoding)).use { it.readText() }
+                runOnUiThread { result.success(text) }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    result.error("decode_failed", error.message, error.toString())
                 }
             }
         }
     }
+
+    private fun openTextDocument(result: MethodChannel.Result) {
+        if (pendingImportResult != null) {
+            result.error("picker_active", "A text file picker is already open", null)
+            return
+        }
+        pendingImportResult = result
+        val intent =
+            Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = "text/plain"
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        try {
+            startActivityForResult(intent, IMPORT_TEXT_REQUEST_CODE)
+        } catch (error: Throwable) {
+            pendingImportResult = null
+            result.error("picker_failed", error.message, error.toString())
+        }
+    }
+
+    @Deprecated("Deprecated by Android; retained for FlutterActivity compatibility")
+    override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?,
+    ) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != IMPORT_TEXT_REQUEST_CODE) return
+        val result = pendingImportResult ?: return
+        pendingImportResult = null
+        val uri = data?.data
+        if (resultCode != Activity.RESULT_OK || uri == null) {
+            result.success(null)
+            return
+        }
+        importUri(uri, result)
+    }
+
+    private fun importUri(
+        uri: Uri,
+        result: MethodChannel.Result,
+    ) {
+        val metadata = documentMetadata(uri)
+        if (metadata.size != null && metadata.size > MAX_IMPORTED_TEXT_BYTES) {
+            result.error(
+                "file_too_large",
+                "Text file exceeds the $MAX_IMPORTED_TEXT_BYTES byte import limit",
+                null,
+            )
+            return
+        }
+        fileExecutor.execute {
+            try {
+                val input =
+                    contentResolver.openInputStream(uri)
+                        ?: error("The selected document could not be opened")
+                val target =
+                    importer.copy(
+                        input,
+                        File(filesDir, IMPORTED_TEXT_DIRECTORY),
+                        sha256(uri.toString()),
+                        metadata.name,
+                    )
+                runOnUiThread { result.success(target.path) }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    val code =
+                        if (error is TextFileTooLargeException) {
+                            "file_too_large"
+                        } else {
+                            "import_failed"
+                        }
+                    result.error(code, error.message, error.toString())
+                }
+            }
+        }
+    }
+
+    private fun promoteLegacyImport(
+        path: String,
+        result: MethodChannel.Result,
+    ) {
+        fileExecutor.execute {
+            try {
+                val source = File(path).canonicalFile
+                val cacheRoot = cacheDir.canonicalFile
+                val insideCache =
+                    source.path == cacheRoot.path ||
+                        source.path.startsWith(cacheRoot.path + File.separator)
+                if (!insideCache || !source.isFile) {
+                    runOnUiThread { result.success(null) }
+                    return@execute
+                }
+                if (source.length() > MAX_IMPORTED_TEXT_BYTES) {
+                    throw TextFileTooLargeException(MAX_IMPORTED_TEXT_BYTES)
+                }
+                val target =
+                    importer.copy(
+                        source.inputStream(),
+                        File(filesDir, IMPORTED_TEXT_DIRECTORY),
+                        "legacy-${sha256(source.path)}",
+                        source.name,
+                    )
+                runOnUiThread { result.success(target.path) }
+            } catch (error: Throwable) {
+                runOnUiThread {
+                    val code =
+                        if (error is TextFileTooLargeException) {
+                            "file_too_large"
+                        } else {
+                            "promotion_failed"
+                        }
+                    result.error(code, error.message, error.toString())
+                }
+            }
+        }
+    }
+
+    private fun documentMetadata(uri: Uri): DocumentMetadata {
+        var name = "imported.txt"
+        var size: Long? = null
+        val cursor: Cursor? =
+            contentResolver.query(
+                uri,
+                arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE),
+                null,
+                null,
+                null,
+            )
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val nameIndex = it.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                val sizeIndex = it.getColumnIndex(OpenableColumns.SIZE)
+                if (nameIndex >= 0 && !it.isNull(nameIndex)) name = it.getString(nameIndex)
+                if (sizeIndex >= 0 && !it.isNull(sizeIndex)) size = it.getLong(sizeIndex)
+            }
+        }
+        return DocumentMetadata(name, size)
+    }
+
+    private fun sha256(value: String): String =
+        MessageDigest
+            .getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
 
     override fun onResume() {
         super.onResume()
@@ -58,7 +227,19 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
-        decoder.shutdown()
+        pendingImportResult = null
+        fileExecutor.shutdown()
         super.onDestroy()
+    }
+
+    private data class DocumentMetadata(
+        val name: String,
+        val size: Long?,
+    )
+
+    companion object {
+        private const val IMPORT_TEXT_REQUEST_CODE = 7314
+        private const val IMPORTED_TEXT_DIRECTORY = "imported_texts"
+        private const val MAX_IMPORTED_TEXT_BYTES = 64L * 1024L * 1024L
     }
 }

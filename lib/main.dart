@@ -10,6 +10,7 @@ import 'font_library.dart';
 import 'models.dart';
 import 'reader_screen.dart';
 import 'strings.dart';
+import 'text_file_importer.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,6 +19,12 @@ Future<void> main() async {
     File('${directory.path}${Platform.pathSeparator}state.json'),
   );
   await store.load();
+  try {
+    await promoteLegacyTextImports(store);
+  } catch (error, stackTrace) {
+    debugPrint('Failed to promote a legacy imported text file: $error');
+    debugPrintStack(stackTrace: stackTrace);
+  }
   final fontLibrary = FontLibrary(
     Directory('${directory.path}${Platform.pathSeparator}fonts'),
   );
