@@ -7,18 +7,15 @@ const _textFileChannel = MethodChannel('com.songs.fantextviewer/text-file');
 const _suggestedRecoveryName = 'fantextviewer-state-recovery.json';
 
 class RecoveryFileExporter {
-  RecoveryFileExporter({
-    MethodChannel channel = _textFileChannel,
-    bool? isAndroid,
-  }) : _channel = channel,
-       _isAndroid = isAndroid ?? Platform.isAndroid;
+  RecoveryFileExporter({this.channel = _textFileChannel, bool? isAndroid})
+    : _isAndroid = isAndroid ?? Platform.isAndroid;
 
-  final MethodChannel _channel;
+  final MethodChannel channel;
   final bool _isAndroid;
 
   Future<bool> export(File source) async {
     if (_isAndroid) {
-      return await _channel.invokeMethod<bool>('exportRecoveryFile', {
+      return await channel.invokeMethod<bool>('exportRecoveryFile', {
             'path': source.path,
             'suggestedName': _suggestedRecoveryName,
           }) ??

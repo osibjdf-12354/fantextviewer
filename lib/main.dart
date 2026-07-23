@@ -221,7 +221,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       const SizedBox(height: 4),
                       Text(
                         '${AppStrings.stateRecoveryBody}\n'
-                        '${recoveryFile?.path ?? AppStrings.unknown}',
+                        '${recoveryFile.path}',
                       ),
                     ],
                   ),

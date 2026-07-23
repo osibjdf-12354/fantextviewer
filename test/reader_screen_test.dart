@@ -3261,7 +3261,7 @@ void main() {
             forcedEncodings.add(forced);
             return DecodedText(
               forced == null ? 'auto decode' : 'saved decode',
-              forced == null ? TextEncoding.cp949 : forced,
+              forced ?? TextEncoding.cp949,
               fingerprint: 'sha256:new',
             );
           },

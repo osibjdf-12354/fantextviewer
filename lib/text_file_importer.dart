@@ -10,27 +10,26 @@ const _textFileChannel = MethodChannel('com.songs.fantextviewer/text-file');
 
 class TextFileImporter {
   TextFileImporter({
-    MethodChannel channel = _textFileChannel,
+    this.channel = _textFileChannel,
     bool? isAndroid,
     Future<String?> Function()? fallbackPicker,
-  }) : _channel = channel,
-       _isAndroid = isAndroid ?? Platform.isAndroid,
+  }) : _isAndroid = isAndroid ?? Platform.isAndroid,
        _fallbackPicker = fallbackPicker ?? _pickWithFileSelector;
 
-  final MethodChannel _channel;
+  final MethodChannel channel;
   final bool _isAndroid;
   final Future<String?> Function() _fallbackPicker;
 
   Future<String?> pick() {
     if (_isAndroid) {
-      return _channel.invokeMethod<String>('importTextFile');
+      return channel.invokeMethod<String>('importTextFile');
     }
     return _fallbackPicker();
   }
 
   Future<String?> promoteLegacy(String path) {
     if (!_isAndroid) return Future.value();
-    return _channel.invokeMethod<String>('promoteLegacyImport', {'path': path});
+    return channel.invokeMethod<String>('promoteLegacyImport', {'path': path});
   }
 }
 
