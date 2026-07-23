@@ -1735,6 +1735,116 @@ void main() {
     expect(bookmarkPage.data, matches(RegExp(r'^\d+$')));
   });
 
+  testWidgets('display settings save the auto interval and show its help', (
+    tester,
+  ) async {
+    final store = _MemoryStore();
+    await _pumpReader(tester, store, '본문');
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('표시 설정'));
+    await tester.pumpAndSettle();
+
+    final increase = find.byKey(const Key('auto-page-interval-increase'));
+    await tester.ensureVisible(increase);
+    expect(
+      find.text('세로 스크롤에서도 오토모드를 켜면 스와이프·상하 넘김으로 자동 전환됩니다.'),
+      findsOneWidget,
+    );
+    await tester.tap(increase);
+    await _dismissSettings(tester);
+
+    expect(store.data.settings.autoPageIntervalSeconds, 6);
+  });
+
+  testWidgets(
+    'drawer pauses auto mode and closing restarts the full interval',
+    (tester) async {
+      final store = _MemoryStore()
+        ..updateSettings(const ReaderSettings(autoPageIntervalSeconds: 1));
+      await _pumpAutoReader(tester, store);
+      await _enableAutoMode(tester);
+
+      await tester.pump(const Duration(milliseconds: 700));
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(store.document('/book.txt').offset, 0);
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 700));
+      expect(store.document('/book.txt').offset, 0);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(store.document('/book.txt').offset, 5);
+    },
+  );
+
+  testWidgets(
+    'inactive lifecycle pauses auto mode until a full interval resumes',
+    (tester) async {
+      final store = _MemoryStore()
+        ..updateSettings(const ReaderSettings(autoPageIntervalSeconds: 1));
+      await _pumpAutoReader(tester, store);
+      await _enableAutoMode(tester);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(store.document('/book.txt').offset, 0);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump(const Duration(milliseconds: 999));
+      expect(store.document('/book.txt').offset, 0);
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(store.document('/book.txt').offset, 5);
+    },
+  );
+
+  testWidgets('reaching the last page turns auto mode off', (tester) async {
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(autoPageIntervalSeconds: 1));
+    await _pumpAutoReader(tester, store, pageCount: 2);
+    await _enableAutoMode(tester);
+
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('마지막 페이지입니다. 오토모드를 종료했습니다.'), findsOneWidget);
+
+    await tester.tap(find.byIcon(Icons.menu));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<SwitchListTile>(find.byKey(const Key('auto-mode-switch')))
+          .value,
+      isFalse,
+    );
+  });
+
+  testWidgets('all drawer actions keep auto mode paused while open', (
+    tester,
+  ) async {
+    final store = _MemoryStore()
+      ..updateSettings(const ReaderSettings(autoPageIntervalSeconds: 1));
+    await _pumpAutoReader(tester, store);
+    await _enableAutoMode(tester);
+
+    for (final label in ['위치 이동', '본문 검색', '북마크', '표시 설정', '파일 정보']) {
+      await tester.tap(find.byIcon(Icons.menu));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(label));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(store.document('/book.txt').offset, 0, reason: label);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+    }
+  });
+
   testWidgets('표시 설정은 단계 버튼으로 값과 과거 소수값을 조절한다', (tester) async {
     final store = _MemoryStore()
       ..updateSettings(

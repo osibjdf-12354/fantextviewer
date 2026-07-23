@@ -223,7 +223,7 @@ class ReaderView extends StatefulWidget {
   State<ReaderView> createState() => _ReaderViewState();
 }
 
-class _ReaderViewState extends State<ReaderView> {
+class _ReaderViewState extends State<ReaderView> with WidgetsBindingObserver {
   late ReaderSettings _settings;
   late List<TextChunk> _chunks;
   late int _offset;
@@ -306,6 +306,7 @@ class _ReaderViewState extends State<ReaderView> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _settings = widget.store.data.settings;
     _chunks = splitText(widget.text, maxChars: 700);
     _offset = widget.store
@@ -318,12 +319,26 @@ class _ReaderViewState extends State<ReaderView> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _itemPositionsListener.itemPositions.removeListener(_recordScrollPosition);
     _saveTimer?.cancel();
     _autoTimer?.cancel();
     unawaited(widget.store.save());
     unawaited(WakelockPlus.disable());
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final active = state == AppLifecycleState.resumed;
+    if (_appActive == active) return;
+    _appActive = active;
+    if (active) {
+      _restartAutoTimer();
+    } else {
+      _autoTimer?.cancel();
+      _pageTurnKey.currentState?.cancelTurn();
+    }
   }
 
   @override
@@ -399,33 +414,57 @@ class _ReaderViewState extends State<ReaderView> {
               onChanged: widget.text.isEmpty ? null : _setAutoMode,
             ),
             const Divider(),
-            _drawerItem(Icons.folder_open, '파일 열기', widget.onOpenFile),
+            _drawerItem(
+              Icons.folder_open,
+              '파일 열기',
+              widget.onOpenFile == null
+                  ? null
+                  : () async => widget.onOpenFile!(),
+            ),
             _drawerItem(Icons.pin_drop_outlined, '위치 이동', _showGoToDialog),
             _drawerItem(Icons.search, '본문 검색', _showSearchDialog),
             _drawerItem(Icons.bookmarks_outlined, '북마크', _showBookmarks),
             _drawerItem(Icons.tune, '표시 설정', _showSettings),
             _drawerItem(Icons.info_outline, '파일 정보', _showFileInfo),
-            _drawerItem(Icons.exit_to_app, '앱 종료', () => SystemNavigator.pop()),
+            _drawerItem(
+              Icons.exit_to_app,
+              '앱 종료',
+              () async => SystemNavigator.pop(),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _drawerItem(IconData icon, String label, VoidCallback? action) {
+  Widget _drawerItem(
+    IconData icon,
+    String label,
+    Future<void> Function()? action,
+  ) {
+    final callback = action;
     return ListTile(
       leading: Icon(icon),
       title: Text(label),
       enabled: action != null,
-      onTap: action == null
+      onTap: callback == null
           ? null
           : () {
               Navigator.of(context).pop();
               WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) action();
+                if (mounted) unawaited(_runDrawerAction(callback));
               });
             },
     );
+  }
+
+  Future<void> _runDrawerAction(Future<void> Function() action) async {
+    _pauseAuto(cancelTurn: true);
+    try {
+      await action();
+    } finally {
+      _resumeAuto();
+    }
   }
 
   Widget _buildScrollReader() {
@@ -1017,6 +1056,7 @@ class _ReaderViewState extends State<ReaderView> {
     );
     _scheduleSave();
     _showMessage('$page에 북마크를 저장했습니다.');
+    _restartAutoTimer();
   }
 
   Future<void> _showGoToDialog() async {
@@ -1250,6 +1290,24 @@ class _ReaderViewState extends State<ReaderView> {
                       style: Theme.of(sheetContext).textTheme.bodySmall,
                     ),
                   ],
+                  _SettingStepper(
+                    settingKey: 'auto-page-interval',
+                    label: '오토 페이지 간격 (초)',
+                    value: draft.autoPageIntervalSeconds.toDouble(),
+                    min: 1,
+                    max: 60,
+                    step: 1,
+                    fractionDigits: 0,
+                    onChanged: (value) => setSheetState(() {
+                      draft = draft.copyWith(
+                        autoPageIntervalSeconds: value.round(),
+                      );
+                    }),
+                  ),
+                  Text(
+                    '세로 스크롤에서도 오토모드를 켜면 스와이프·상하 넘김으로 자동 전환됩니다.',
+                    style: Theme.of(sheetContext).textTheme.bodySmall,
+                  ),
                   const SizedBox(height: 12),
                   const Text('페이지 표시'),
                   Wrap(
